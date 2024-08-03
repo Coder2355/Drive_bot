@@ -5,7 +5,6 @@ from flask import Flask, request
 from pyrogram import Client, filters
 from pyrogram.types import Message
 import ffmpeg
-from multiprocessing import Process
 import youtube_dl
 from config import API_ID, API_HASH, BOT_TOKEN, DOWNLOAD_PATH, PROCESSED_PATH
 
@@ -13,6 +12,7 @@ app = Client("gdrive_bot", api_id=API_ID, api_hash=API_HASH, bot_token=BOT_TOKEN
 web_app = Flask(__name__)
 
 async def download_from_gdrive(url: str, dest: str):
+    print(f"Downloading from Google Drive URL: {url}")  # Debug statement
     async with aiohttp.ClientSession() as session:
         async with session.get(url, params={'id': get_gdrive_file_id(url)}, stream=True) as response:
             token = get_confirm_token(response)
@@ -24,12 +24,15 @@ async def download_from_gdrive(url: str, dest: str):
                 await save_response_content(response, dest)
 
 def get_gdrive_file_id(url: str) -> str:
+    print(f"Extracting file ID from URL: {url}")  # Debug statement
     if 'id=' in url:
-        return url.split('id=')[1]
+        file_id = url.split('id=')[1]
     elif 'drive.google.com' in url:
-        return url.split('/')[-2]
+        file_id = url.split('/')[-2]
     else:
         raise ValueError("Invalid Google Drive URL")
+    print(f"Extracted file ID: {file_id}")  # Debug statement
+    return file_id
 
 def get_confirm_token(response):
     for key, value in response.cookies.items():
@@ -45,15 +48,19 @@ async def save_response_content(response, dest):
                 f.write(chunk)
 
 def process_video(input_path: str, output_path: str):
+    print(f"Processing video: {input_path}")  # Debug statement
     ffmpeg.input(input_path).output(output_path).run()
+    print(f"Video processed: {output_path}")  # Debug statement
 
 def download_from_youtube(url: str, dest: str):
+    print(f"Downloading from YouTube URL: {url}")  # Debug statement
     ydl_opts = {
         'format': 'best',
         'outtmpl': dest
     }
     with youtube_dl.YoutubeDL(ydl_opts) as ydl:
         ydl.download([url])
+    print(f"Downloaded video from YouTube to: {dest}")  # Debug statement
 
 @app.on_message(filters.command("upload") & filters.private)
 async def upload(client: Client, message: Message):
@@ -62,6 +69,7 @@ async def upload(client: Client, message: Message):
         return
 
     url = message.command[1]
+    print(f"Received URL: {url}")  # Debug statement
 
     if not os.path.exists(DOWNLOAD_PATH):
         os.makedirs(DOWNLOAD_PATH)
@@ -90,6 +98,7 @@ async def upload(client: Client, message: Message):
         await client.send_video(message.chat.id, processed_path)
     except Exception as e:
         await message.reply_text(f"An error occurred: {str(e)}")
+        print(f"Error: {str(e)}")  # Debug statement
     finally:
         if os.path.exists(video_path):
             os.remove(video_path)
@@ -101,6 +110,7 @@ def index():
     if request.method == 'POST':
         url = request.form['url']
         chat_id = request.form['chat_id']
+        print(f"Received form data - URL: {url}, Chat ID: {chat_id}")  # Debug statement
 
         if not os.path.exists(DOWNLOAD_PATH):
             os.makedirs(DOWNLOAD_PATH)
@@ -123,6 +133,7 @@ def index():
                 process_video(video_path, processed_path)
                 await app.send_video(chat_id, processed_path)
             except Exception as e:
+                print(f"Error: {str(e)}")  # Debug statement
                 return f"An error occurred: {str(e)}"
             finally:
                 if os.path.exists(video_path):
