@@ -1,7 +1,6 @@
-pyrogram
-Tgcrypto 
-google-api-python-client
-google-auth-httplib2
-google-auth-oauthlib
-aiohttp
-tqdm
+aiohttp==3.8.1
+Flask==2.1.2
+ffmpeg-python==0.2.0
+pyrogram==2.0.106
+requests==2.27.1
+tgcrypto==1.2.2
