@@ -4,18 +4,11 @@ import aiohttp
 import asyncio
 from pyrogram import Client, filters
 from pyrogram.types import Message
-from google.oauth2 import service_account
-from googleapiclient.discovery import build
-from googleapiclient.http import MediaIoBaseDownload
 from tqdm.asyncio import tqdm
 import config
 
 # Initialize Pyrogram Client
 app = Client("gdrive_url_uploader_bot", api_id=config.API_ID, api_hash=config.API_HASH, bot_token=config.BOT_TOKEN)
-
-# Initialize Google Drive API Client
-credentials = service_account.Credentials.from_service_account_file(config.GDRIVE_CREDENTIALS)
-drive_service = build('drive', 'v3', credentials=credentials)
 
 # Helper function to get Google Drive file ID from URL
 def get_file_id(url):
@@ -25,24 +18,22 @@ def get_file_id(url):
         return match.group(1)
     return None
 
+# Function to download file using aiohttp
 async def download_file(file_id, file_name, message, client):
-    request = drive_service.files().get_media(fileId=file_id)
-    fh = open(file_name, 'wb')
-    downloader = MediaIoBaseDownload(fh, request)
-    done = False
-    total_size = int(request.headers['Content-Length'])
-    chunk_size = 1024 * 1024  # 1 MB
-    progress = tqdm(total=total_size, unit='B', unit_scale=True, desc=file_name)
+    url = f"https://drive.google.com/uc?export=download&id={file_id}"
+    async with aiohttp.ClientSession() as session:
+        async with session.get(url) as response:
+            total_size = int(response.headers.get('Content-Length', 0))
+            chunk_size = 1024 * 1024  # 1 MB
+            progress = tqdm(total=total_size, unit='B', unit_scale=True, desc=file_name)
+            
+            with open(file_name, 'wb') as f:
+                async for chunk in response.content.iter_chunked(chunk_size):
+                    f.write(chunk)
+                    progress.update(len(chunk))
+                    await client.send_chat_action(message.chat.id, "upload_document")
 
-    while not done:
-        status, done = downloader.next_chunk(chunk_size=chunk_size)
-        progress.update(chunk_size)
-        progress.n = min(progress.total, progress.n + chunk_size)
-        progress.refresh()
-        await client.send_chat_action(message.chat.id, "upload_document")
-
-    progress.close()
-    fh.close()
+            progress.close()
 
 # Command handler to upload Google Drive files
 @app.on_message(filters.command("upload") & filters.private)
@@ -59,11 +50,8 @@ async def upload_gdrive_file(client, message: Message):
         return
 
     try:
-        # Get file metadata
-        file = drive_service.files().get(fileId=file_id).execute()
-        file_name = file.get('name')
-        
-        await message.reply_text(f"Downloading file: {file_name}")
+        file_name = f"{file_id}.file"  # Default file name
+        await message.reply_text(f"Downloading file with ID: {file_id}")
 
         # Download file with progress bar
         await download_file(file_id, file_name, message, client)
