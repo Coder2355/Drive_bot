@@ -1,115 +1,150 @@
 import os
-import asyncio
+import ffmpeg
+import threading
+from flask import Flask, request, jsonify
 from pyrogram import Client, filters
-from pyrogram.types import Message
-import aiofiles
-from config import API_ID, API_HASH, BOT_TOKEN, DOWNLOAD_DIR
+from pyrogram.types import InputMediaAudio, InputMediaVideo
+from tqdm import tqdm
+import config
 
-# Initialize the Pyrogram Client
-app = Client("audio_bot", api_id=API_ID, api_hash=API_HASH, bot_token=BOT_TOKEN)
+# Initialize the Flask app
+flask_app = Flask(__name__)
 
-# Dictionary to store user states
-user_states = {}
+# Initialize the bot
+bot_app = Client("my_bot", api_id=config.API_ID, api_hash=config.API_HASH, bot_token=config.BOT_TOKEN)
 
-async def run_ffmpeg_command(*args):
-    process = await asyncio.create_subprocess_exec(
-        'ffmpeg', *args,
-        stdout=asyncio.subprocess.PIPE,
-        stderr=asyncio.subprocess.PIPE
+# Create folders to save downloaded files
+os.makedirs("downloads", exist_ok=True)
+os.makedirs("outputs", exist_ok=True)
+
+# Function to display a progress bar for file download
+def progress_bar(current, total, text="Downloading"):
+    progress = tqdm(total=total, initial=current, desc=text, unit='B', unit_scale=True, leave=False)
+    progress.update(current - progress.n)
+    progress.close()
+
+# Function to display a progress bar for file upload
+def upload_progress_bar(current, total):
+    progress_bar(current, total, text="Uploading")
+
+@bot_app.on_message(filters.command("trim_audio") & filters.audio)
+async def trim_audio(client, message):
+    if len(message.command) != 3:
+        await message.reply("Usage: /trim_audio start_time end_time\nExample: /trim_audio 00:00:10 00:00:20")
+        return
+
+    start_time, end_time = message.command[1], message.command[2]
+
+    audio_file = await message.download(file_name="downloads/", progress=progress_bar)
+    output_file = f"outputs/trimmed_{os.path.basename(audio_file)}"
+
+    (
+        ffmpeg
+        .input(audio_file, ss=start_time, to=end_time)
+        .output(output_file)
+        .run()
     )
-    stdout, stderr = await process.communicate()
-    if process.returncode != 0:
-        raise Exception(f"FFmpeg error: {stderr.decode()}")
-    return stdout.decode(), stderr.decode()
 
-@app.on_message(filters.command("trim_audio"))
-async def trim_audio(client: Client, message: Message):
-    if not message.reply_to_message or not message.reply_to_message.audio:
-        await message.reply("Please reply to an audio message with the command /trim_audio start_time end_time")
+    await message.reply_audio(output_file, progress=upload_progress_bar)
+    os.remove(audio_file)
+    os.remove(output_file)
+
+@bot_app.on_message(filters.command("merge") & filters.video & filters.reply)
+async def merge_audio_video(client, message):
+    if not message.reply_to_message.audio:
+        await message.reply("Please reply to a video with an audio file and use the /merge command.")
         return
 
-    command_parts = message.text.split()
-    if len(command_parts) != 3:
-        await message.reply("Usage: /trim_audio start_time end_time (e.g., /trim_audio 00:00:10 00:00:20)")
-        return
+    video_file = await message.download(file_name="downloads/", progress=progress_bar)
+    audio_file = await message.reply_to_message.download(file_name="downloads/", progress=progress_bar)
+    output_file = f"outputs/merged_{os.path.basename(video_file)}"
 
-    start_time, end_time = command_parts[1], command_parts[2]
-    audio_file = await message.reply_to_message.download(DOWNLOAD_DIR)
+    (
+        ffmpeg
+        .input(video_file)
+        .input(audio_file)
+        .output(output_file, vcodec='copy', acodec='aac')
+        .run()
+    )
 
-    status_message = await message.reply("Trimming audio...")
+    await message.reply_video(output_file, progress=upload_progress_bar)
+    os.remove(video_file)
+    os.remove(audio_file)
+    os.remove(output_file)
 
-    # Extract the file extension and ensure the trimmed file has the same extension
-    file_extension = os.path.splitext(audio_file)[1]
-    trimmed_file = os.path.join(DOWNLOAD_DIR, f"trimmed_{os.path.basename(audio_file)}")
+@bot_app.on_message(filters.command("merge_audio") & filters.audio)
+async def merge_audio(client, message):
+    if 'first_audio' not in client.data:
+        client.data['first_audio'] = message
+        await message.reply("Audio file received. Please send the second audio file.")
+    elif 'second_audio' not in client.data:
+        client.data['second_audio'] = message
+        await message.reply("Second audio file received. Merging audio files...")
+        await merge_audio_files(client)
+    else:
+        await message.reply("You have already provided two audio files. Please use /merge_audio to start over.")
 
-    try:
-        await run_ffmpeg_command('-i', audio_file, '-ss', start_time, '-to', end_time, '-c', 'copy', f"{trimmed_file}{file_extension}")
-        await status_message.edit("Uploading trimmed audio...")
-        await message.reply_audio(audio=f"{trimmed_file}{file_extension}")
-        await status_message.delete()
-    except Exception as e:
-        await status_message.edit(f"An error occurred: {e}")
-    finally:
-        if os.path.exists(audio_file):
-            os.remove(audio_file)
-        if os.path.exists(f"{trimmed_file}{file_extension}"):
-            os.remove(f"{trimmed_file}{file_extension}")
+async def merge_audio_files(client):
+    first_audio = await client.data['first_audio'].download(file_name="downloads/")
+    second_audio = await client.data['second_audio'].download(file_name="downloads/")
+    output_file = f"outputs/merged_audio_{os.path.basename(first_audio)}"
 
-@app.on_message(filters.command("merge_audio"))
-async def start_merge_audio(client: Client, message: Message):
-    await message.reply("Please send the first audio file.")
-    user_states[message.from_user.id] = {"state": "waiting_for_first_audio"}
+    (
+        ffmpeg
+        .concat(
+            ffmpeg.input(first_audio),
+            ffmpeg.input(second_audio),
+            v=0, a=1
+        )
+        .output(output_file)
+        .run()
+    )
 
-@app.on_message(filters.audio)
-async def handle_audio(client: Client, message: Message):
-    user_id = message.from_user.id
+    await client.data['first_audio'].reply_audio(output_file, progress=upload_progress_bar)
+    os.remove(first_audio)
+    os.remove(second_audio)
+    os.remove(output_file)
+    
+    client.data.clear()
 
-    if user_id not in user_states:
-        return
+@flask_app.route('/trim_audio', methods=['POST'])
+def web_trim_audio():
+    data = request.json
+    audio_file = data['audio_file']
+    start_time = data['start_time']
+    end_time = data['end_time']
+    
+    audio_path = f"downloads/{os.path.basename(audio_file)}"
+    output_file = f"outputs/trimmed_{os.path.basename(audio_file)}"
 
-    state = user_states[user_id].get("state")
+    (
+        ffmpeg
+        .input(audio_path, ss=start_time, to=end_time)
+        .output(output_file)
+        .run()
+    )
 
-    if state == "waiting_for_first_audio":
-        status_message = await message.reply("Downloading first audio...")
-        first_audio_file = await message.download(DOWNLOAD_DIR)
-        await status_message.edit("First audio received. Please send the second audio file.")
-        user_states[user_id] = {"state": "waiting_for_second_audio", "first_audio_file": first_audio_file}
-    elif state == "waiting_for_second_audio":
-        first_audio_file = user_states[user_id]["first_audio_file"]
-        
-        status_message = await message.reply("Downloading second audio...")
-        second_audio_file = await message.download(DOWNLOAD_DIR)
-        await status_message.edit("Merging audio files...")
+    return jsonify({"output_file": output_file})
 
-        merged_file = os.path.join(DOWNLOAD_DIR, "merged_audio.mp3")
+@flask_app.route('/merge', methods=['POST'])
+def web_merge_audio_video():
+    data = request.json
+    video_file = data['video_file']
+    audio_file = data['audio_file']
+    
+    video_path = f"downloads/{os.path.basename(video_file)}"
+    audio_path = f"downloads/{os.path.basename(audio_file)}"
+    output_file = f"outputs/merged_{os.path.basename(video_file)}"
 
-        # Create a text file listing the audio files to be concatenated
-        concat_file = os.path.join(DOWNLOAD_DIR, "concat_list.txt")
-        async with aiofiles.open(concat_file, 'w') as f:
-            await f.write(f"file '{first_audio_file}'\n")
-            await f.write(f"file '{second_audio_file}'\n")
+    (
+        ffmpeg
+        .input(video_path)
+        .input(audio_path)
+        .output(output_file, vcodec='copy', acodec='aac')
+        .run()
+    )
 
-        try:
-            stdout, stderr = await run_ffmpeg_command('-f', 'concat', '-safe', '0', '-i', concat_file, '-c', 'copy', merged_file)
-            print("FFmpeg stdout:", stdout)
-            print("FFmpeg stderr:", stderr)
-            await status_message.edit("Uploading merged audio...")
-            await message.reply_audio(audio=merged_file)
-            await status_message.delete()
-        except Exception as e:
-            await status_message.edit(f"An error occurred: {e}")
-        finally:
-            if os.path.exists(first_audio_file):
-                os.remove(first_audio_file)
-            if os.path.exists(second_audio_file):
-                os.remove(second_audio_file)
-            if os.path.exists(merged_file):
-                os.remove(merged_file)
-            if os.path.exists(concat_file):
-                os.remove(concat_file)
+    return jsonify({"output_file": output_file})
 
-        # Clear the user's state
-        del user_states[user_id]
-
-# Start the bot
-app.run()
+if __name__ == "__main__":
+    bot_app.run()
