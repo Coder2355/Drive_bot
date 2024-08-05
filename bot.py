@@ -1,156 +1,111 @@
 import os
 import asyncio
-import aiohttp
-from flask import Flask, request
 from pyrogram import Client, filters
 from pyrogram.types import Message
 import ffmpeg
-import youtube_dl
-from config import API_ID, API_HASH, BOT_TOKEN, DOWNLOAD_PATH, PROCESSED_PATH
+from flask import Flask
+import threading
+import aiofiles
+from config import API_ID, API_HASH, BOT_TOKEN, DOWNLOAD_DIR
 
-app = Client("gdrive_bot", api_id=API_ID, api_hash=API_HASH, bot_token=BOT_TOKEN)
-web_app = Flask(__name__)
+# Initialize the Pyrogram Client
+app = Client("audio_bot", api_id=API_ID, api_hash=API_HASH, bot_token=BOT_TOKEN)
 
-async def download_from_gdrive(url: str, dest: str):
-    print(f"Downloading from Google Drive URL: {url}")  # Debug statement
-    async with aiohttp.ClientSession() as session:
-        async with session.get(url, params={'id': get_gdrive_file_id(url)}, stream=True) as response:
-            token = get_confirm_token(response)
+# Initialize Flask app
+flask_app = Flask(__name__)
 
-            if token:
-                async with session.get(url, params={'id': get_gdrive_file_id(url), 'confirm': token}, stream=True) as response:
-                    await save_response_content(response, dest)
-            else:
-                await save_response_content(response, dest)
+# Dictionary to store user states
+user_states = {}
 
-def get_gdrive_file_id(url: str) -> str:
-    print(f"Extracting file ID from URL: {url}")  # Debug statement
-    if 'id=' in url:
-        file_id = url.split('id=')[1]
-    elif 'drive.google.com' in url:
-        file_id = url.split('/')[-2]
-    else:
-        raise ValueError("Invalid Google Drive URL")
-    print(f"Extracted file ID: {file_id}")  # Debug statement
-    return file_id
+async def run_ffmpeg_command(*args):
+    process = await asyncio.create_subprocess_exec(
+        'ffmpeg', *args,
+        stdout=asyncio.subprocess.PIPE,
+        stderr=asyncio.subprocess.PIPE
+    )
+    stdout, stderr = await process.communicate()
+    if process.returncode != 0:
+        raise Exception(f"FFmpeg error: {stderr.decode()}")
 
-def get_confirm_token(response):
-    for key, value in response.cookies.items():
-        if key.startswith('download_warning'):
-            return value
-    return None
-
-async def save_response_content(response, dest):
-    CHUNK_SIZE = 32768
-    with open(dest, 'wb') as f:
-        async for chunk in response.content.iter_chunked(CHUNK_SIZE):
-            if chunk:
-                f.write(chunk)
-
-def process_video(input_path: str, output_path: str):
-    print(f"Processing video: {input_path}")  # Debug statement
-    ffmpeg.input(input_path).output(output_path).run()
-    print(f"Video processed: {output_path}")  # Debug statement
-
-def download_from_youtube(url: str, dest: str):
-    print(f"Downloading from YouTube URL: {url}")  # Debug statement
-    ydl_opts = {
-        'format': 'best',
-        'outtmpl': dest
-    }
-    with youtube_dl.YoutubeDL(ydl_opts) as ydl:
-        ydl.download([url])
-    print(f"Downloaded video from YouTube to: {dest}")  # Debug statement
-
-@app.on_message(filters.command("upload") & filters.private)
-async def upload(client: Client, message: Message):
-    if len(message.command) < 2:
-        await message.reply_text("Please provide a Google Drive or YouTube URL.")
+@app.on_message(filters.command("trim_audio"))
+async def trim_audio(client: Client, message: Message):
+    if not message.reply_to_message or not message.reply_to_message.audio:
+        await message.reply("Please reply to an audio message with the command /trim_audio start_time end_time")
         return
 
-    url = message.command[1]
-    print(f"Received URL: {url}")  # Debug statement
+    command_parts = message.text.split()
+    if len(command_parts) != 3:
+        await message.reply("Usage: /trim_audio start_time end_time (e.g., /trim_audio 00:00:10 00:00:20)")
+        return
 
-    if not os.path.exists(DOWNLOAD_PATH):
-        os.makedirs(DOWNLOAD_PATH)
+    start_time, end_time = command_parts[1], command_parts[2]
+    audio_file = await message.reply_to_message.download(DOWNLOAD_DIR)
 
-    if not os.path.exists(PROCESSED_PATH):
-        os.makedirs(PROCESSED_PATH)
+    status_message = await message.reply("Trimming audio...")
 
-    video_path = os.path.join(DOWNLOAD_PATH, "video.mp4")
-    processed_path = os.path.join(PROCESSED_PATH, "processed_video.mp4")
+    trimmed_file = os.path.join(DOWNLOAD_DIR, "trimmed_" + os.path.basename(audio_file))
 
     try:
-        if "drive.google.com" in url:
-            await message.reply_text("Downloading video from Google Drive...")
-            await download_from_gdrive(url, video_path)
-        elif "youtube.com" in url or "youtu.be" in url:
-            await message.reply_text("Downloading video from YouTube...")
-            download_from_youtube(url, video_path)
-        else:
-            await message.reply_text("Please provide a valid Google Drive or YouTube URL.")
-            return
-
-        await message.reply_text("Processing video with FFmpeg...")
-        process_video(video_path, processed_path)
-
-        await message.reply_text("Uploading processed video...")
-        await client.send_video(message.chat.id, processed_path)
+        await run_ffmpeg_command('-i', audio_file, '-ss', start_time, '-to', end_time, '-c', 'copy', trimmed_file)
+        await status_message.edit("Uploading trimmed audio...")
+        await message.reply_audio(audio=trimmed_file)
+        await status_message.delete()
     except Exception as e:
-        await message.reply_text(f"An error occurred: {str(e)}")
-        print(f"Error: {str(e)}")  # Debug statement
+        await status_message.edit(f"An error occurred: {e}")
     finally:
-        if os.path.exists(video_path):
-            os.remove(video_path)
-        if os.path.exists(processed_path):
-            os.remove(processed_path)
+        if os.path.exists(audio_file):
+            os.remove(audio_file)
+        if os.path.exists(trimmed_file):
+            os.remove(trimmed_file)
 
-@web_app.route('/', methods=['GET', 'POST'])
+@app.on_message(filters.command("merge_audio"))
+async def start_merge_audio(client: Client, message: Message):
+    await message.reply("Please send the first audio file.")
+    user_states[message.from_user.id] = {"state": "waiting_for_first_audio"}
+
+@app.on_message(filters.audio)
+async def handle_audio(client: Client, message: Message):
+    user_id = message.from_user.id
+
+    if user_id not in user_states:
+        return
+
+    state = user_states[user_id].get("state")
+
+    if state == "waiting_for_first_audio":
+        status_message = await message.reply("Downloading first audio...")
+        first_audio_file = await message.download(DOWNLOAD_DIR)
+        await status_message.edit("First audio received. Please send the second audio file.")
+        user_states[user_id] = {"state": "waiting_for_second_audio", "first_audio_file": first_audio_file}
+    elif state == "waiting_for_second_audio":
+        first_audio_file = user_states[user_id]["first_audio_file"]
+        
+        status_message = await message.reply("Downloading second audio...")
+        second_audio_file = await message.download(DOWNLOAD_DIR)
+        await status_message.edit("Merging audio files...")
+
+        merged_file = os.path.join(DOWNLOAD_DIR, "merged_audio.mp3")
+
+        try:
+            await run_ffmpeg_command('-i', first_audio_file, '-i', second_audio_file, '-filter_complex', '[0:a][1:a]concat=n=2:v=0:a=1[out]', '-map', '[out]', merged_file)
+            await status_message.edit("Uploading merged audio...")
+            await message.reply_audio(audio=merged_file)
+            await status_message.delete()
+        except Exception as e:
+            await status_message.edit(f"An error occurred: {e}")
+        finally:
+            if os.path.exists(first_audio_file):
+                os.remove(first_audio_file)
+            if os.path.exists(second_audio_file):
+                os.remove(second_audio_file)
+            if os.path.exists(merged_file):
+                os.remove(merged_file)
+
+        # Clear the user's state
+        del user_states[user_id]
+
+@flask_app.route('/')
 def index():
-    if request.method == 'POST':
-        url = request.form['url']
-        chat_id = request.form['chat_id']
-        print(f"Received form data - URL: {url}, Chat ID: {chat_id}")  # Debug statement
+    return "Bot is running"
 
-        if not os.path.exists(DOWNLOAD_PATH):
-            os.makedirs(DOWNLOAD_PATH)
-
-        if not os.path.exists(PROCESSED_PATH):
-            os.makedirs(PROCESSED_PATH)
-
-        video_path = os.path.join(DOWNLOAD_PATH, "video.mp4")
-        processed_path = os.path.join(PROCESSED_PATH, "processed_video.mp4")
-
-        async def handle_web_request():
-            try:
-                if "drive.google.com" in url:
-                    await download_from_gdrive(url, video_path)
-                elif "youtube.com" in url or "youtu.be" in url:
-                    download_from_youtube(url, video_path)
-                else:
-                    return "Please provide a valid Google Drive or YouTube URL."
-
-                process_video(video_path, processed_path)
-                await app.send_video(chat_id, processed_path)
-            except Exception as e:
-                print(f"Error: {str(e)}")  # Debug statement
-                return f"An error occurred: {str(e)}"
-            finally:
-                if os.path.exists(video_path):
-                    os.remove(video_path)
-                if os.path.exists(processed_path):
-                    os.remove(processed_path)
-
-        asyncio.run(handle_web_request())
-
-        return "Video processed and sent to Telegram!"
-    return '''
-    <form method="post">
-        URL: <input type="text" name="url"><br>
-        Telegram Chat ID: <input type="text" name="chat_id"><br>
-        <input type="submit" value="Upload">
-    </form>
-    '''
-
-if __name__ == "__main__":
-    app.run()
+app.run()
