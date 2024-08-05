@@ -1,6 +1,6 @@
-Flask==2.2.2
-werkzeug==2.2.3
-pyrogram==2.0.30
-tgcrypto==1.2.2
-ffmpeg-python==0.2.0
-tqdm==4.65.0
+Flask
+werkzeug
+pyrogram
+tgcrypto
+ffmpeg-python
+tqdm
