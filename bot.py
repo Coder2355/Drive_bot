@@ -43,7 +43,9 @@ async def trim_audio(client: Client, message: Message):
 
     status_message = await message.reply("Trimming audio...")
 
-    trimmed_file = os.path.join(DOWNLOAD_DIR, "trimmed_" + os.path.basename(audio_file))
+    # Extract the file extension
+    file_extension = os.path.splitext(audio_file)[1]
+    trimmed_file = os.path.join(DOWNLOAD_DIR, f"trimmed_{os.path.basename(audio_file)}")
 
     try:
         await run_ffmpeg_command('-i', audio_file, '-ss', start_time, '-to', end_time, '-c', 'copy', trimmed_file)
@@ -86,8 +88,14 @@ async def handle_audio(client: Client, message: Message):
 
         merged_file = os.path.join(DOWNLOAD_DIR, "merged_audio.mp3")
 
+        # Create a text file listing the audio files to be concatenated
+        concat_file = os.path.join(DOWNLOAD_DIR, "concat_list.txt")
+        async with aiofiles.open(concat_file, 'w') as f:
+            await f.write(f"file '{first_audio_file}'\n")
+            await f.write(f"file '{second_audio_file}'\n")
+
         try:
-            await run_ffmpeg_command('-i', first_audio_file, '-i', second_audio_file, '-filter_complex', '[0:a][1:a]concat=n=2:v=0:a=1[out]', '-map', '[out]', merged_file)
+            await run_ffmpeg_command('-f', 'concat', '-safe', '0', '-i', concat_file, '-c', 'copy', merged_file)
             await status_message.edit("Uploading merged audio...")
             await message.reply_audio(audio=merged_file)
             await status_message.delete()
@@ -100,6 +108,8 @@ async def handle_audio(client: Client, message: Message):
                 os.remove(second_audio_file)
             if os.path.exists(merged_file):
                 os.remove(merged_file)
+            if os.path.exists(concat_file):
+                os.remove(concat_file)
 
         # Clear the user's state
         del user_states[user_id]
@@ -108,4 +118,5 @@ async def handle_audio(client: Client, message: Message):
 def index():
     return "Bot is running"
 
+# Start the bot
 app.run()
