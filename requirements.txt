@@ -1,8 +1,6 @@
-aiohttp==3.8.1
-Flask==2.0.3
-Werkzeug==2.0.3
-ffmpeg-python==0.2.0
-pyrogram==2.0.106
-requests==2.27.1
-tgcrypto==1.2.2
-youtube-dl==2021.12.17
+pyrogram
+ffmpeg-python
+flask
+aiofiles
+Werkzeug
+tgcrypto
