@@ -11,7 +11,7 @@ import config
 flask_app = Flask(__name__)
 
 # Initialize the bot
-bot_app = Client("my_bot", api_id=config.API_ID, api_hash=config.API_HASH, bot_token=config.BOT_TOKEN)
+app = Client("my_bot", api_id=config.API_ID, api_hash=config.API_HASH, bot_token=config.BOT_TOKEN)
 
 # Create folders to save downloaded files
 os.makedirs("downloads", exist_ok=True)
@@ -27,7 +27,7 @@ def progress_bar(current, total, text="Downloading"):
 def upload_progress_bar(current, total):
     progress_bar(current, total, text="Uploading")
 
-@bot_app.on_message(filters.command("trim_audio") & filters.audio)
+@app.on_message(filters.command("trim_audio") & filters.audio)
 async def trim_audio(client, message):
     if len(message.command) != 3:
         await message.reply("Usage: /trim_audio start_time end_time\nExample: /trim_audio 00:00:10 00:00:20")
@@ -49,7 +49,7 @@ async def trim_audio(client, message):
     os.remove(audio_file)
     os.remove(output_file)
 
-@bot_app.on_message(filters.command("merge") & filters.video & filters.reply)
+@app.on_message(filters.command("merge") & filters.video & filters.reply)
 async def merge_audio_video(client, message):
     if not message.reply_to_message.audio:
         await message.reply("Please reply to a video with an audio file and use the /merge command.")
@@ -72,7 +72,7 @@ async def merge_audio_video(client, message):
     os.remove(audio_file)
     os.remove(output_file)
 
-@bot_app.on_message(filters.command("merge_audio") & filters.audio)
+@app.on_message(filters.command("merge_audio") & filters.audio)
 async def merge_audio(client, message):
     if 'first_audio' not in client.data:
         client.data['first_audio'] = message
@@ -147,4 +147,4 @@ def web_merge_audio_video():
     return jsonify({"output_file": output_file})
 
 if __name__ == "__main__":
-    bot_app.run()
+    app.run()
