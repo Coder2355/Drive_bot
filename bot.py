@@ -1,98 +1,121 @@
 import os
-import ffmpeg
-import asyncio
 from pyrogram import Client, filters
 from pyrogram.types import Message
-from flask import Flask, request, jsonify
-from dotenv import load_dotenv
-import config
+import subprocess
+from multiprocessing import Process
+from flask import Flask, request
 
-load_dotenv()
+# Importing configuration from config.py
+from config import API_ID, API_HASH, BOT_TOKEN
 
-# Initialize the bot with your API credentials
-app = Client(
-    "my_bot",
-    api_id=config.API_ID,
-    api_hash=config.API_HASH,
-    bot_token=config.BOT_TOKEN
-)
+# Initialize the bot client
+app = Client("media_merger_bot", api_id=API_ID, api_hash=API_HASH, bot_token=BOT_TOKEN)
 
-# Initialize Flask
-api = Flask(__name__)
+# Initialize Flask web server
+web_app = Flask(__name__)
 
-# Function to synchronize audio and video
-async def synchronize_audio_video(video_path, audio_path, output_path):
-    try:
-        input_video = ffmpeg.input(video_path)
-        input_audio = ffmpeg.input(audio_path)
-        (
-            ffmpeg
-            .concat(input_video, input_audio, v=1, a=1)
-            .output(output_path)
-            .run()
-        )
-        return True
-    except ffmpeg.Error as e:
-        print(f"FFmpeg error: {e}")
-        return False
-    except Exception as e:
-        print(f"General error: {e}")
-        return False
+# Directory to store the downloaded files
+DOWNLOAD_DIR = "downloads/"
+os.makedirs(DOWNLOAD_DIR, exist_ok=True)
 
-@app.on_message(filters.command(["start"]))
-async def start(client: Client, message: Message):
-    await message.reply_text("Hello! Send me a video and an audio file to synchronize.")
+# Store the file IDs temporarily for each user
+user_media_files = {}
 
-@app.on_message(filters.video)
-async def video_handler(client: Client, message: Message):
-    video = message.video
-    video_path = f"{video.file_id}.mp4"
-    
-    try:
-        await client.download_media(video, video_path)
-        await message.reply_text("Video received! Now send the audio file.")
-    except Exception as e:
-        await message.reply_text(f"Failed to download video: {e}")
+@app.on_message(filters.command("start"))
+async def start(client, message: Message):
+    await message.reply_text("Send me a video file and then an audio file to merge them, or send two audio files to merge them!")
 
-@app.on_message(filters.audio)
-async def audio_handler(client: Client, message: Message):
-    audio = message.audio
-    audio_path = f"{audio.file_id}.mp3"
-    video_message = await client.get_messages(message.chat.id, message.reply_to_message_id)
-    video_path = f"{video_message.video.file_id}.mp4"
-    output_path = f"synchronized_{audio.file_id}.mp4"
-    
-    try:
-        await client.download_media(audio, audio_path)
-    except Exception as e:
-        await message.reply_text(f"Failed to download audio: {e}")
-        return
+@app.on_message((filters.video | filters.audio) & ~filters.forwarded)
+async def receive_media(client, message: Message):
+    user_id = message.from_user.id
 
-    await message.reply_text("Audio received! Synchronizing now...")
-    
-    if not os.path.exists(video_path):
-        await message.reply_text("Video file not found. Make sure to send the video first.")
-        os.remove(audio_path)
-        return
+    if user_id not in user_media_files:
+        user_media_files[user_id] = []
 
-    try:
-        if await asyncio.to_thread(synchronize_audio_video, video_path, audio_path, output_path):
-            await client.send_video(message.chat.id, output_path, reply_to_message_id=message.message_id)
+    media_type = 'audio' if message.audio else 'video'
+    media_path = await message.download(file_name=f"{DOWNLOAD_DIR}{message.{media_type}.file_name}")
+
+    user_media_files[user_id].append(media_path)
+
+    if len(user_media_files[user_id]) == 1:
+        if media_type == 'audio':
+            await message.reply_text("First audio received. Now send the second audio.")
         else:
-            await message.reply_text("Failed to synchronize video and audio.")
-    except Exception as e:
-        await message.reply_text(f"Error during synchronization: {e}")
-    finally:
-        # Clean up files
-        for file_path in [video_path, audio_path, output_path]:
-            if os.path.exists(file_path):
-                os.remove(file_path)
+            await message.reply_text("Video received. Now send an audio file to merge with the video.")
+    elif len(user_media_files[user_id]) == 2:
+        if any('.mp4' in file for file in user_media_files[user_id]):
+            await message.reply_text("Both media files received. Merging video with audio now...")
+            await merge_video_and_audio(client, message, user_id)
+        else:
+            await message.reply_text("Both audios received. Merging them now...")
+            await merge_audios(client, message, user_id)
 
-@api.route("/webhook", methods=["POST"])
-def webhook():
-    data = request.get_json()
-    asyncio.run(app.process_updates(data))
-    return jsonify({"status": "ok"})
+async def merge_audios(client, message, user_id):
+    audio1, audio2 = user_media_files[user_id]
+
+    output_path = f"{DOWNLOAD_DIR}merged_audio_{user_id}.mp3"
+
+    # FFmpeg command to merge the two audio files
+    command = [
+        "ffmpeg",
+        "-i", audio1,
+        "-i", audio2,
+        "-filter_complex", "[0:0][1:0]concat=n=2:v=0:a=1[out]",
+        "-map", "[out]",
+        output_path
+    ]
+
+    try:
+        subprocess.run(command, check=True)
+        await message.reply_audio(audio=output_path, caption="Here is your merged audio!")
+    except subprocess.CalledProcessError as e:
+        await message.reply_text(f"Failed to merge audios: {str(e)}")
+    finally:
+        # Clean up: remove the original audio files
+        os.remove(audio1)
+        os.remove(audio2)
+        os.remove(output_path)
+        del user_media_files[user_id]
+
+async def merge_video_and_audio(client, message, user_id):
+    video, audio = user_media_files[user_id]
+
+    output_path = f"{DOWNLOAD_DIR}merged_video_{user_id}.mp4"
+
+    # FFmpeg command to merge the video with the audio file
+    command = [
+        "ffmpeg",
+        "-i", video,
+        "-i", audio,
+        "-c:v", "copy",
+        "-c:a", "aac",
+        "-strict", "experimental",
+        output_path
+    ]
+
+    try:
+        subprocess.run(command, check=True)
+        await message.reply_video(video=output_path, caption="Here is your merged video!")
+    except subprocess.CalledProcessError as e:
+        await message.reply_text(f"Failed to merge video and audio: {str(e)}")
+    finally:
+        # Clean up: remove the original video and audio files
+        os.remove(video)
+        os.remove(audio)
+        os.remove(output_path)
+        del user_media_files[user_id]
+
+@app.on_message(filters.command("cancel"))
+async def cancel(client, message: Message):
+    user_id = message.from_user.id
+    if user_id in user_media_files:
+        del user_media_files[user_id]
+    await message.reply_text("Merging process has been cancelled.")
+
+# Flask route for health check or any other web function
+@web_app.route('/health')
+def health_check():
+    return "Bot is running!", 200
 
 if __name__ == "__main__":
     app.run()
