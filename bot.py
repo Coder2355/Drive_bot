@@ -1,9 +1,11 @@
 import os
+import asyncio
 from pyrogram import Client, filters
 from pyrogram.types import Message
+from concurrent.futures import ProcessPoolExecutor
 import subprocess
 from multiprocessing import Process
-from flask import Flask, request
+from flask import Flask
 
 # Importing configuration from config.py
 from config import API_ID, API_HASH, BOT_TOKEN
@@ -21,6 +23,9 @@ os.makedirs(DOWNLOAD_DIR, exist_ok=True)
 # Store the file IDs temporarily for each user
 user_media_files = {}
 user_merge_mode = {}
+
+# Initialize a ProcessPoolExecutor for background processing
+executor = ProcessPoolExecutor()
 
 @app.on_message(filters.command("start"))
 async def start(client, message: Message):
@@ -74,10 +79,8 @@ async def receive_media(client, message: Message):
 
 async def merge_audios(client, message, user_id):
     audio1, audio2 = user_media_files[user_id]
-
     output_path = f"{DOWNLOAD_DIR}merged_audio_{user_id}.mp3"
 
-    # FFmpeg command to merge the two audio files
     command = [
         "ffmpeg",
         "-i", audio1,
@@ -87,25 +90,20 @@ async def merge_audios(client, message, user_id):
         output_path
     ]
 
-    try:
-        subprocess.run(command, check=True)
-        await message.reply_audio(audio=output_path, caption="Here is your merged audio!")
-    except subprocess.CalledProcessError as e:
-        await message.reply_text(f"Failed to merge audios: {str(e)}")
-    finally:
-        # Clean up: remove the original audio files
-        os.remove(audio1)
-        os.remove(audio2)
-        os.remove(output_path)
-        del user_media_files[user_id]
-        del user_merge_mode[user_id]
+    # Execute FFmpeg asynchronously in a separate process
+    await run_ffmpeg(command, client, message, output_path)
+
+    # Clean up
+    os.remove(audio1)
+    os.remove(audio2)
+    os.remove(output_path)
+    del user_media_files[user_id]
+    del user_merge_mode[user_id]
 
 async def merge_video_and_audio(client, message, user_id):
     video, audio = user_media_files[user_id]
-
     output_path = f"{DOWNLOAD_DIR}merged_video_{user_id}.mp4"
 
-    # FFmpeg command to merge the video with the audio file
     command = [
         "ffmpeg",
         "-i", video,
@@ -116,18 +114,30 @@ async def merge_video_and_audio(client, message, user_id):
         output_path
     ]
 
-    try:
-        subprocess.run(command, check=True)
-        await message.reply_video(video=output_path, caption="Here is your merged video!")
-    except subprocess.CalledProcessError as e:
-        await message.reply_text(f"Failed to merge video and audio: {str(e)}")
-    finally:
-        # Clean up: remove the original video and audio files
-        os.remove(video)
-        os.remove(audio)
-        os.remove(output_path)
-        del user_media_files[user_id]
-        del user_merge_mode[user_id]
+    # Execute FFmpeg asynchronously in a separate process
+    await run_ffmpeg(command, client, message, output_path)
+
+    # Clean up
+    os.remove(video)
+    os.remove(audio)
+    os.remove(output_path)
+    del user_media_files[user_id]
+    del user_merge_mode[user_id]
+
+async def run_ffmpeg(command, client, message, output_path):
+    loop = asyncio.get_event_loop()
+    # Run the FFmpeg command in a background process
+    process = await asyncio.create_subprocess_exec(
+        *command,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE
+    )
+    stdout, stderr = await process.communicate()
+    
+    if process.returncode == 0:
+        await message.reply_document(output_path, caption="Here is your merged file!")
+    else:
+        await message.reply_text(f"Failed to merge: {stderr.decode()}")
 
 @app.on_message(filters.command("cancel"))
 async def cancel(client, message: Message):
