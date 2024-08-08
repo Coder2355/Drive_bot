@@ -1,6 +1,5 @@
-Flask
-werkzeug
 pyrogram
 tgcrypto
 ffmpeg-python
-tqdm
+flask
+python-dotenv
