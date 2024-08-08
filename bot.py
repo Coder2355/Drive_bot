@@ -2,7 +2,6 @@ import os
 from pyrogram import Client, filters
 from pyrogram.types import Message
 import subprocess
-from multiprocessing import Process
 from flask import Flask, request
 
 # Importing configuration from config.py
@@ -33,7 +32,8 @@ async def receive_media(client, message: Message):
         user_media_files[user_id] = []
 
     media_type = 'audio' if message.audio else 'video'
-    media_path = await message.download(file_name=f"{DOWNLOAD_DIR}{message.{media_type}.file_name}")
+    media_file = getattr(message, media_type)
+    media_path = await message.download(file_name=f"{DOWNLOAD_DIR}{media_file.file_name}")
 
     user_media_files[user_id].append(media_path)
 
