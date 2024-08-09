@@ -22,6 +22,8 @@ async def start(client, message: Message):
         "/merge_audio - Merge two audio files.\n"
         "/merge_video - Merge a video file with an audio file."
     )
+    await asyncio.sleep(1)
+
 
 @app.on_message(filters.command("merge_audio"))
 async def set_merge_audio(client, message: Message):
