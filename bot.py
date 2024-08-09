@@ -67,23 +67,23 @@ async def receive_media(client, message: Message):
         )
 
         user_media_files[user_id].append(media_path)
+        await asyncio.sleep(1)  # Added delay
 
         if merge_mode == "audio":
             if len(user_media_files[user_id]) == 1:
                 await progress_message.edit_text("First audio received. Now send the second audio.")
             elif len(user_media_files[user_id]) == 2:
                 await progress_message.edit_text("Both audios received. Merging them now...")
-                await asyncio.sleep(1)  # Add a short delay before merging
                 await merge_audios(client, message, user_id)
         elif merge_mode == "video":
             if len(user_media_files[user_id]) == 1 and media_type == "video":
                 await progress_message.edit_text("Video received. Now send the audio file.")
             elif len(user_media_files[user_id]) == 2 and any('.mp4' in file for file in user_media_files[user_id]):
                 await progress_message.edit_text("Both video and audio received. Merging them now...")
-                await asyncio.sleep(1)  # Add a short delay before merging
                 await merge_video_and_audio(client, message, user_id)
     except Exception as e:
         await progress_message.edit_text(f"Error during download: {e}")
+        print(f"Error during download: {e}")  # Debugging statement
 
 async def merge_audios(client, message, user_id):
     audio1, audio2 = user_media_files[user_id]
@@ -113,7 +113,7 @@ async def merge_audios(client, message, user_id):
     if process.returncode == 0:
         if os.path.exists(output_path):
             await progress_message.edit_text("Merging complete, uploading the merged audio...")
-            await asyncio.sleep(1)  # Add a short delay before uploading
+            await asyncio.sleep(1)  # Added delay before upload
             try:
                 await message.reply_document(
                     document=output_path,
@@ -123,10 +123,12 @@ async def merge_audios(client, message, user_id):
                 )
             except Exception as e:
                 await progress_message.edit_text(f"Failed to upload the merged audio: {e}")
+                print(f"Failed to upload the merged audio: {e}")  # Debugging statement
         else:
             await progress_message.edit_text("Merging completed, but the output file was not found.")
     else:
         await progress_message.edit_text(f"Failed to merge: {stderr.decode()}")
+        print(f"Failed to merge: {stderr.decode()}")  # Debugging statement
 
     # Clean up
     os.remove(audio1)
@@ -167,7 +169,7 @@ async def merge_video_and_audio(client, message, user_id):
     if process.returncode == 0:
         if os.path.exists(output_path):
             await progress_message.edit_text("Merging complete, uploading the merged video...")
-            await asyncio.sleep(1)  # Add a short delay before uploading
+            await asyncio.sleep(1)  # Added delay before upload
             try:
                 await message.reply_document(
                     document=output_path,
@@ -177,10 +179,12 @@ async def merge_video_and_audio(client, message, user_id):
                 )
             except Exception as e:
                 await progress_message.edit_text(f"Failed to upload the merged video: {e}")
+                print(f"Failed to upload the merged video: {e}")  # Debugging statement
         else:
             await progress_message.edit_text("Merging completed, but the output file was not found.")
     else:
         await progress_message.edit_text(f"Failed to merge: {stderr.decode()}")
+        print(f"Failed to merge: {stderr.decode()}")  # Debugging statement
 
     # Clean up
     os.remove(video)
@@ -191,7 +195,7 @@ async def merge_video_and_audio(client, message, user_id):
     # Remove user data
     del user_media_files[user_id]
     del user_merge_mode[user_id]
-
+    
 @app.on_message(filters.command("cancel"))
 async def cancel(client, message: Message):
     user_id = message.from_user.id
