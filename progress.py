@@ -1,58 +1,64 @@
-import time
 import math
+import time
+from pyrogram.types import Message
+
+async def progress(current, total, message: Message, start, description):
+    now = time.time()
+    diff = now - start
+
+    if diff < 1:
+        return
+
+    percentage = current * 100 / total
+    speed = current / diff
+    time_to_completion = (total - current) / speed
+    time_to_completion = round(time_to_completion)
+    progress_str = "{0}{1} {2}%\n".format(
+        ''.join(["■" for i in range(math.floor(percentage / 10))]),
+        ''.join(["□" for i in range(10 - math.floor(percentage / 10))]),
+        round(percentage, 2),
+    )
+
+    estimated_total_time = round(diff / current * total)
+    try:
+        await message.edit_text(
+            "{}\n"
+            "Progress: `{}`\n"
+            "Speed: `{}`\n"
+            "ETA: `{}`".format(
+                description,
+                progress_str,
+                humanbytes(speed),
+                time_formatter(time_to_completion),
+            )
+        )
+    except Exception as e:
+        print(f"Error updating progress: {e}")
 
 def humanbytes(size):
+    # Convert bytes to a human-readable format
     if not size:
-        return "0B"
+        return ""
     power = 2**10
     n = 0
-    Dic_powerN = {0: '', 1: 'Ki', 2: 'Mi', 3: 'Gi', 4: 'Ti'}
+    power_labels = {0: '', 1: 'KiB', 2: 'MiB', 3: 'GiB', 4: 'TiB'}
     while size > power:
         size /= power
         n += 1
-    return f"{math.floor(size)} {Dic_powerN[n]}B"
-
-async def progress(current, total, message, start_time, description=""):
-    now = time.time()
-    diff = now - start_time
-    if diff >= 1:  # Update every second
-        percentage = current * 100 / total
-        speed = current / diff
-        elapsed_time = round(diff)
-        time_to_completion = round((total - current) / speed)
-        estimated_total_time = elapsed_time + time_to_completion
-        
-        progress_str = "[{0}{1}] {2}%".format(
-            ''.join(["█" for i in range(math.floor(percentage / 10))]),
-            ''.join(["░" for i in range(10 - math.floor(percentage / 10))]),
-            round(percentage, 2)
-        )
-
-        tmp = (f"{description}\n"
-               f"{progress_str}\n"
-               f"{humanbytes(current)} of {humanbytes(total)} @ {humanbytes(speed)}/s\n"
-               f"Time Elapsed: {elapsed_time}s | Time Left: {time_to_completion}s")
-
-        try:
-            if message and message.chat and message.id:
-                await message.edit_text(text=tmp)
-        except Exception as e:
-            print(f"Error updating progress: {e}")
+    return f"{round(size, 2)} {power_labels[n]}"
 
 def time_formatter(seconds):
+    # Convert seconds to a human-readable time format
     result = ""
-    v_m = seconds // 60
-    v_s = seconds % 60
-    v_h = v_m // 60
-    v_m = v_m % 60
-    v_d = v_h // 24
-    v_h = v_h % 24
-    if v_d != 0:
-        result += f"{v_d}d"
-    if v_h != 0:
-        result += f"{v_h}h"
-    if v_m != 0:
-        result += f"{v_m}m"
-    if v_s != 0:
-        result += f"{v_s}s"
+    (days, remainder) = divmod(seconds, 86400)
+    if days != 0:
+        result += f"{days}d"
+    (hours, remainder) = divmod(remainder, 3600)
+    if hours != 0:
+        result += f"{hours}h"
+    (minutes, seconds) = divmod(remainder, 60)
+    if minutes != 0:
+        result += f"{minutes}m"
+    if seconds != 0:
+        result += f"{seconds}s"
     return result
