@@ -2,18 +2,10 @@ import os
 import asyncio
 from pyrogram import Client, filters
 from pyrogram.types import Message
-from concurrent.futures import ProcessPoolExecutor
 import subprocess
-from multiprocessing import Process
-from flask import Flask
 import time
-
 from config import API_ID, API_HASH, BOT_TOKEN
-from progress import progress, humanbytes
-
-app = Client("media_merger_bot", api_id=API_ID, api_hash=API_HASH, bot_token=BOT_TOKEN)
-
-web_app = Flask(__name__)
+from progress import progress
 
 DOWNLOAD_DIR = "downloads/"
 os.makedirs(DOWNLOAD_DIR, exist_ok=True)
@@ -21,7 +13,7 @@ os.makedirs(DOWNLOAD_DIR, exist_ok=True)
 user_media_files = {}
 user_merge_mode = {}
 
-executor = ProcessPoolExecutor()
+app = Client("media_merger_bot", api_id=API_ID, api_hash=API_HASH, bot_token=BOT_TOKEN)
 
 @app.on_message(filters.command("start"))
 async def start(client, message: Message):
@@ -56,14 +48,16 @@ async def receive_media(client, message: Message):
     merge_mode = user_merge_mode[user_id]
     media_type = 'audio' if message.audio else 'video'
     media_file = getattr(message, media_type)
-    
+
     start_time = time.time()
     progress_message = await message.reply_text(f"Downloading {media_type}...")
 
     try:
-        media_path = await message.download(file_name=f"{DOWNLOAD_DIR}{media_file.file_name}",
-                                            progress=progress,
-                                            progress_args=(progress_message, start_time, f"Downloading {media_type}"))
+        media_path = await message.download(
+            file_name=f"{DOWNLOAD_DIR}{media_file.file_name}",
+            progress=progress,
+            progress_args=(progress_message, start_time, f"Downloading {media_type}")
+        )
 
         user_media_files[user_id].append(media_path)
 
@@ -98,11 +92,33 @@ async def merge_audios(client, message, user_id):
     start_time = time.time()
     progress_message = await message.reply_text("Merging audio files...")
 
-    await run_ffmpeg(command, client, progress_message, output_path, start_time)
+    process = await asyncio.create_subprocess_exec(
+        *command,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE
+    )
 
+    stdout, stderr = await process.communicate()
+
+    if process.returncode == 0:
+        if os.path.exists(output_path):
+            await progress_message.edit_text("Merging complete, uploading the merged audio...")
+            try:
+                await message.reply_document(output_path, caption="Here is your merged audio file!")
+            except Exception as e:
+                await progress_message.edit_text(f"Failed to upload the merged audio: {e}")
+        else:
+            await progress_message.edit_text("Merging completed, but the output file was not found.")
+    else:
+        await progress_message.edit_text(f"Failed to merge: {stderr.decode()}")
+
+    # Clean up
     os.remove(audio1)
     os.remove(audio2)
-    os.remove(output_path)
+    if os.path.exists(output_path):
+        os.remove(output_path)
+
+    # Remove user data
     del user_media_files[user_id]
     del user_merge_mode[user_id]
 
@@ -123,29 +139,35 @@ async def merge_video_and_audio(client, message, user_id):
     start_time = time.time()
     progress_message = await message.reply_text("Merging video and audio...")
 
-    await run_ffmpeg(command, client, progress_message, output_path, start_time)
-
-    os.remove(video)
-    os.remove(audio)
-    os.remove(output_path)
-    del user_media_files[user_id]
-    del user_merge_mode[user_id]
-
-async def run_ffmpeg(command, client, message, output_path, start_time):
-    loop = asyncio.get_event_loop()
-    
     process = await asyncio.create_subprocess_exec(
         *command,
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE
     )
-    
+
     stdout, stderr = await process.communicate()
-    
+
     if process.returncode == 0:
-        await message.reply_document(output_path, caption="Here is your merged file!")
+        if os.path.exists(output_path):
+            await progress_message.edit_text("Merging complete, uploading the merged video...")
+            try:
+                await message.reply_document(output_path, caption="Here is your merged video file!")
+            except Exception as e:
+                await progress_message.edit_text(f"Failed to upload the merged video: {e}")
+        else:
+            await progress_message.edit_text("Merging completed, but the output file was not found.")
     else:
-        await message.edit_text(f"Failed to merge: {stderr.decode()}")
+        await progress_message.edit_text(f"Failed to merge: {stderr.decode()}")
+
+    # Clean up
+    os.remove(video)
+    os.remove(audio)
+    if os.path.exists(output_path):
+        os.remove(output_path)
+
+    # Remove user data
+    del user_media_files[user_id]
+    del user_merge_mode[user_id]
 
 @app.on_message(filters.command("cancel"))
 async def cancel(client, message: Message):
@@ -155,10 +177,6 @@ async def cancel(client, message: Message):
     if user_id in user_merge_mode:
         del user_merge_mode[user_id]
     await message.reply_text("Merging process has been cancelled.")
-
-@web_app.route('/health')
-def health_check():
-    return "Bot is running!", 200
 
 if __name__ == "__main__":
     app.run()
