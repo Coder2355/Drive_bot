@@ -6,7 +6,7 @@ async def progress(current, total, message: Message, start, description):
     now = time.time()
     diff = now - start
 
-    if diff < 1:
+    if diff < 2:  # Update progress every 2 seconds
         return
 
     percentage = current * 100 / total
