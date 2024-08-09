@@ -6,9 +6,10 @@ from concurrent.futures import ProcessPoolExecutor
 import subprocess
 from multiprocessing import Process
 from flask import Flask
+import time
 
-# Importing configuration from config.py
 from config import API_ID, API_HASH, BOT_TOKEN
+from progress import progress, humanbytes
 
 # Initialize the bot client
 app = Client("media_merger_bot", api_id=API_ID, api_hash=API_HASH, bot_token=BOT_TOKEN)
@@ -16,15 +17,12 @@ app = Client("media_merger_bot", api_id=API_ID, api_hash=API_HASH, bot_token=BOT
 # Initialize Flask web server
 web_app = Flask(__name__)
 
-# Directory to store the downloaded files
 DOWNLOAD_DIR = "downloads/"
 os.makedirs(DOWNLOAD_DIR, exist_ok=True)
 
-# Store the file IDs temporarily for each user
 user_media_files = {}
 user_merge_mode = {}
 
-# Initialize a ProcessPoolExecutor for background processing
 executor = ProcessPoolExecutor()
 
 @app.on_message(filters.command("start"))
@@ -60,7 +58,11 @@ async def receive_media(client, message: Message):
     merge_mode = user_merge_mode[user_id]
     media_type = 'audio' if message.audio else 'video'
     media_file = getattr(message, media_type)
-    media_path = await message.download(file_name=f"{DOWNLOAD_DIR}{media_file.file_name}")
+    
+    start_time = time.time()
+    media_path = await message.download(file_name=f"{DOWNLOAD_DIR}{media_file.file_name}",
+                                        progress=progress,
+                                        progress_args=(message, start_time, f"Downloading {media_type}"))
 
     user_media_files[user_id].append(media_path)
 
@@ -90,10 +92,9 @@ async def merge_audios(client, message, user_id):
         output_path
     ]
 
-    # Execute FFmpeg asynchronously in a separate process
-    await run_ffmpeg(command, client, message, output_path)
+    start_time = time.time()
+    await run_ffmpeg(command, client, message, output_path, start_time)
 
-    # Clean up
     os.remove(audio1)
     os.remove(audio2)
     os.remove(output_path)
@@ -114,24 +115,25 @@ async def merge_video_and_audio(client, message, user_id):
         output_path
     ]
 
-    # Execute FFmpeg asynchronously in a separate process
-    await run_ffmpeg(command, client, message, output_path)
+    start_time = time.time()
+    await run_ffmpeg(command, client, message, output_path, start_time)
 
-    # Clean up
     os.remove(video)
     os.remove(audio)
     os.remove(output_path)
     del user_media_files[user_id]
     del user_merge_mode[user_id]
 
-async def run_ffmpeg(command, client, message, output_path):
+async def run_ffmpeg(command, client, message, output_path, start_time):
     loop = asyncio.get_event_loop()
+    
     # Run the FFmpeg command in a background process
     process = await asyncio.create_subprocess_exec(
         *command,
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE
     )
+    
     stdout, stderr = await process.communicate()
     
     if process.returncode == 0:
