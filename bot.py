@@ -7,7 +7,6 @@ import time
 from config import API_ID, API_HASH, BOT_TOKEN
 from progress import progress
 
-# Ensure the download directory exists
 DOWNLOAD_DIR = "/content/Drive_bot/Drive_bot/downloads/"
 os.makedirs(DOWNLOAD_DIR, exist_ok=True)
 
@@ -106,7 +105,12 @@ async def merge_audios(client, message, user_id):
         if os.path.exists(output_path):
             await progress_message.edit_text("Merging complete, uploading the merged audio...")
             try:
-                await message.reply_document(output_path, caption="Here is your merged audio file!")
+                await message.reply_document(
+                    document=output_path,
+                    caption="Here is your merged audio file!",
+                    progress=progress,
+                    progress_args=(progress_message, start_time, "Uploading merged audio")
+                )
             except Exception as e:
                 await progress_message.edit_text(f"Failed to upload the merged audio: {e}")
         else:
@@ -154,7 +158,12 @@ async def merge_video_and_audio(client, message, user_id):
         if os.path.exists(output_path):
             await progress_message.edit_text("Merging complete, uploading the merged video...")
             try:
-                await message.reply_document(output_path, caption="Here is your merged video file!")
+                await message.reply_document(
+                    document=output_path,
+                    caption="Here is your merged video file!",
+                    progress=progress,
+                    progress_args=(progress_message, start_time, "Uploading merged video")
+                )
             except Exception as e:
                 await progress_message.edit_text(f"Failed to upload the merged video: {e}")
         else:
