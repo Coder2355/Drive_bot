@@ -11,10 +11,8 @@ import time
 from config import API_ID, API_HASH, BOT_TOKEN
 from progress import progress, humanbytes
 
-# Initialize the bot client
 app = Client("media_merger_bot", api_id=API_ID, api_hash=API_HASH, bot_token=BOT_TOKEN)
 
-# Initialize Flask web server
 web_app = Flask(__name__)
 
 DOWNLOAD_DIR = "downloads/"
@@ -60,24 +58,29 @@ async def receive_media(client, message: Message):
     media_file = getattr(message, media_type)
     
     start_time = time.time()
-    media_path = await message.download(file_name=f"{DOWNLOAD_DIR}{media_file.file_name}",
-                                        progress=progress,
-                                        progress_args=(message, start_time, f"Downloading {media_type}"))
+    progress_message = await message.reply_text(f"Downloading {media_type}...")
 
-    user_media_files[user_id].append(media_path)
+    try:
+        media_path = await message.download(file_name=f"{DOWNLOAD_DIR}{media_file.file_name}",
+                                            progress=progress,
+                                            progress_args=(progress_message, start_time, f"Downloading {media_type}"))
 
-    if merge_mode == "audio":
-        if len(user_media_files[user_id]) == 1:
-            await message.reply_text("First audio received. Now send the second audio.")
-        elif len(user_media_files[user_id]) == 2:
-            await message.reply_text("Both audios received. Merging them now...")
-            await merge_audios(client, message, user_id)
-    elif merge_mode == "video":
-        if len(user_media_files[user_id]) == 1 and media_type == "video":
-            await message.reply_text("Video received. Now send the audio file.")
-        elif len(user_media_files[user_id]) == 2 and any('.mp4' in file for file in user_media_files[user_id]):
-            await message.reply_text("Both video and audio received. Merging them now...")
-            await merge_video_and_audio(client, message, user_id)
+        user_media_files[user_id].append(media_path)
+
+        if merge_mode == "audio":
+            if len(user_media_files[user_id]) == 1:
+                await progress_message.edit_text("First audio received. Now send the second audio.")
+            elif len(user_media_files[user_id]) == 2:
+                await progress_message.edit_text("Both audios received. Merging them now...")
+                await merge_audios(client, message, user_id)
+        elif merge_mode == "video":
+            if len(user_media_files[user_id]) == 1 and media_type == "video":
+                await progress_message.edit_text("Video received. Now send the audio file.")
+            elif len(user_media_files[user_id]) == 2 and any('.mp4' in file for file in user_media_files[user_id]):
+                await progress_message.edit_text("Both video and audio received. Merging them now...")
+                await merge_video_and_audio(client, message, user_id)
+    except Exception as e:
+        await progress_message.edit_text(f"Error during download: {e}")
 
 async def merge_audios(client, message, user_id):
     audio1, audio2 = user_media_files[user_id]
@@ -93,7 +96,9 @@ async def merge_audios(client, message, user_id):
     ]
 
     start_time = time.time()
-    await run_ffmpeg(command, client, message, output_path, start_time)
+    progress_message = await message.reply_text("Merging audio files...")
+
+    await run_ffmpeg(command, client, progress_message, output_path, start_time)
 
     os.remove(audio1)
     os.remove(audio2)
@@ -116,7 +121,9 @@ async def merge_video_and_audio(client, message, user_id):
     ]
 
     start_time = time.time()
-    await run_ffmpeg(command, client, message, output_path, start_time)
+    progress_message = await message.reply_text("Merging video and audio...")
+
+    await run_ffmpeg(command, client, progress_message, output_path, start_time)
 
     os.remove(video)
     os.remove(audio)
@@ -127,7 +134,6 @@ async def merge_video_and_audio(client, message, user_id):
 async def run_ffmpeg(command, client, message, output_path, start_time):
     loop = asyncio.get_event_loop()
     
-    # Run the FFmpeg command in a background process
     process = await asyncio.create_subprocess_exec(
         *command,
         stdout=subprocess.PIPE,
@@ -139,7 +145,7 @@ async def run_ffmpeg(command, client, message, output_path, start_time):
     if process.returncode == 0:
         await message.reply_document(output_path, caption="Here is your merged file!")
     else:
-        await message.reply_text(f"Failed to merge: {stderr.decode()}")
+        await message.edit_text(f"Failed to merge: {stderr.decode()}")
 
 @app.on_message(filters.command("cancel"))
 async def cancel(client, message: Message):
@@ -150,7 +156,6 @@ async def cancel(client, message: Message):
         del user_merge_mode[user_id]
     await message.reply_text("Merging process has been cancelled.")
 
-# Flask route for health check or any other web function
 @web_app.route('/health')
 def health_check():
     return "Bot is running!", 200
