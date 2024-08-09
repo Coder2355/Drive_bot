@@ -2,7 +2,6 @@ import time
 import math
 
 def humanbytes(size):
-    # Converts byte size into a human-readable format
     if not size:
         return "0B"
     power = 2**10
@@ -35,25 +34,7 @@ async def progress(current, total, message, start_time, description=""):
                f"Time Elapsed: {elapsed_time}s | Time Left: {time_to_completion}s")
 
         try:
-            await message.edit_text(text=tmp)
+            if message and message.chat and message.message_id:
+                await message.edit_text(text=tmp)
         except Exception as e:
             print(f"Error updating progress: {e}")
-
-def time_formatter(seconds):
-    # Converts seconds into a readable time format
-    result = ""
-    v_m = seconds // 60
-    v_s = seconds % 60
-    v_h = v_m // 60
-    v_m = v_m % 60
-    v_d = v_h // 24
-    v_h = v_h % 24
-    if v_d != 0:
-        result += f"{v_d}d"
-    if v_h != 0:
-        result += f"{v_h}h"
-    if v_m != 0:
-        result += f"{v_m}m"
-    if v_s != 0:
-        result += f"{v_s}s"
-    return result
