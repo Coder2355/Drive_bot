@@ -7,7 +7,8 @@ import time
 from config import API_ID, API_HASH, BOT_TOKEN
 from progress import progress
 
-DOWNLOAD_DIR = "downloads/"
+# Ensure the download directory exists
+DOWNLOAD_DIR = "/content/Drive_bot/Drive_bot/downloads/"
 os.makedirs(DOWNLOAD_DIR, exist_ok=True)
 
 user_media_files = {}
@@ -82,6 +83,7 @@ async def merge_audios(client, message, user_id):
 
     command = [
         "ffmpeg",
+        "-y",  # Add the '-y' flag to overwrite existing files
         "-i", audio1,
         "-i", audio2,
         "-filter_complex", "[0:0][1:0]concat=n=2:v=0:a=1[out]",
@@ -128,6 +130,7 @@ async def merge_video_and_audio(client, message, user_id):
 
     command = [
         "ffmpeg",
+        "-y",  # Add the '-y' flag to overwrite existing files
         "-i", video,
         "-i", audio,
         "-c:v", "copy",
