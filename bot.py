@@ -1,4 +1,5 @@
 import os
+import uuid
 import asyncio
 from pyrogram import Client, filters
 from pyrogram.types import Message
@@ -42,7 +43,9 @@ async def receive_video(client: Client, message: Message):
         file_name = message.video.file_name if message.video else message.document.file_name
         file_extension = os.path.splitext(file_name)[1].lower()
         if file_extension in ['.mp4', '.mkv', '.avi', '.mov']:
-            user_state[chat_id]["video"] = await message.download(config.DOWNLOAD_DIR)
+            unique_id = str(uuid.uuid4())
+            video_path = await message.download(f"{config.DOWNLOAD_DIR}/video_{unique_id}{file_extension}")
+            user_state[chat_id]["video"] = video_path
             user_state[chat_id]["state"] = "awaiting_audio"
             await message.reply_text("Video received! Now, please send the audio file.")
         else:
@@ -52,7 +55,8 @@ async def receive_video(client: Client, message: Message):
 async def receive_audio(client: Client, message: Message):
     chat_id = message.chat.id
     if user_state.get(chat_id, {}).get("state") == "awaiting_audio":
-        audio_path = await message.download(config.DOWNLOAD_DIR)
+        unique_id = str(uuid.uuid4())
+        audio_path = await message.download(f"{config.DOWNLOAD_DIR}/audio_{unique_id}.mp3")
         video_path = user_state[chat_id]["video"]
         output_path = os.path.join(config.DOWNLOAD_DIR, f"merged_{message.chat.id}.mp4")
 
