@@ -1,33 +1,91 @@
+import os
 import asyncio
+import subprocess
 from pyrogram import Client, filters
-from aiohttp import web
-from config import config
-from callback import start, merge_command, receive_video, receive_audio
+from flask import Flask
+from threading import Thread
+from config import API_ID, API_HASH, BOT_TOKEN
 
-app = Client(
-    "media_bot",
-    api_id=config.API_ID,
-    api_hash=config.API_HASH,
-    bot_token=config.BOT_TOKEN
-)
+# Initialize Pyrogram Client
+app = Client("audio_trimmer_bot", api_id=API_ID, api_hash=API_HASH, bot_token=BOT_TOKEN)
 
-# Registering the callbacks from callback.py using decorators
-@app.on_message(filters.command("start"))
-async def on_start(client, message):
-    await start(client, message)
+# Initialize Flask
+flask_app = Flask(__name__)
 
-@app.on_message(filters.command("merge"))
-async def on_merge(client, message):
-    await merge_command(client, message)
+# Function to trim audio using FFmpeg
+async def trim_audio(input_file, output_file, start_time, end_time):
+    command = [
+        'ffmpeg',
+        '-i', input_file,
+        '-ss', start_time,
+        '-to', end_time,
+        '-c:a', 'copy',  # Use audio-specific codec for faster processing
+        '-y',  # Overwrite output file without asking
+        output_file
+    ]
+    
+    process = await asyncio.create_subprocess_exec(
+        *command,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE
+    )
+    stdout, stderr = await process.communicate()
 
-@app.on_message((filters.video | filters.document) & filters.private)
-async def on_receive_video(client, message):
-    await receive_video(client, message)
+    if process.returncode == 0:
+        return output_file
+    else:
+        error_message = stderr.decode()
+        print(f"FFmpeg error: {error_message}")
+        return None
 
-@app.on_message(filters.audio & filters.private)
-async def on_receive_audio(client, message):
-    await receive_audio(client, message)
+# /trim_audio command handler
+@app.on_message(filters.command("trim_audio") & filters.reply)
+async def trim_audio_handler(client, message):
+    if not message.reply_to_message.audio:
+        await message.reply("Please reply to an audio file with the command.")
+        return
+
+    try:
+        # Notify the user that the download is starting
+        status_message = await message.reply("Downloading the audio file...")
+
+        # Extracting command arguments
+        args = message.text.split()
+        if len(args) < 3:
+            await status_message.edit("Please provide the start and end times in the format: `/trim_audio start_time end_time`\nExample: `/trim_audio 00:00:10 00:00:30`")
+            return
+
+        start_time = args[1]
+        end_time = args[2]
+
+        # Downloading the audio file
+        audio = message.reply_to_message.audio
+        input_file = await client.download_media(audio)
+
+        # Notify the user that the trimming is in progress
+        await status_message.edit("Trimming the audio file...")
+
+        output_file = f"trimmed_{audio.file_name}"
+
+        # Trimming the audio
+        trimmed_file = await trim_audio(input_file, output_file, start_time, end_time)
+        if trimmed_file:
+            # Notify the user that the upload is in progress
+            await status_message.edit("Uploading the trimmed audio file...")
+
+            await message.reply_document(trimmed_file)
+            os.remove(trimmed_file)
+            await status_message.delete()  # Delete the status message after completion
+        else:
+            await status_message.edit("An error occurred while trimming the audio. Please ensure the start and end times are correct.")
+        
+        # Clean up the input file
+        os.remove(input_file)
+
+    except Exception as e:
+        await status_message.edit(f"An unexpected error occurred: {e}")
 
 
-if __name__ == "__main__":
+# Run the Flask server and the bot
+if __name__ == "__main__":    
     app.run()
