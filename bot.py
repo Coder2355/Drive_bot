@@ -14,32 +14,26 @@ app = Client(
     bot_token=config.BOT_TOKEN
 )
 
-# Ensure the download directory exists
-if not os.path.exists(config.DOWNLOAD_DIR):
-    os.makedirs(config.DOWNLOAD_DIR)
-
-# State to keep track of what the user is doing
 user_state = {}
 
 async def merge_video_audio(video_path, audio_path, output_path):
-    input_video = ffmpeg.input(video_path)
-    input_audio = ffmpeg.input(audio_path)
-    ffmpeg.concat(input_video, input_audio, v=1, a=1).output(output_path).run(overwrite_output=True)
+    try:
+        input_video = ffmpeg.input(video_path)
+        input_audio = ffmpeg.input(audio_path)
+        ffmpeg.concat(input_video, input_audio, v=1, a=1).output(output_path).run(overwrite_output=True)
+    except ffmpeg.Error as e:
+        print(f"FFmpeg error: {e}")
 
-@app.on_message(filters.command("start"))
 async def start(client: Client, message: Message):
     await message.reply_text("Hello! I can help you merge video and audio files. Use the /merge command to start.")
 
-@app.on_message(filters.command("merge"))
 async def merge_command(client: Client, message: Message):
     user_state[message.chat.id] = {"state": "awaiting_video"}
     await message.reply_text("Please send the video file as either a video or document.")
 
-@app.on_message((filters.video | filters.document) & filters.private)
 async def receive_video(client: Client, message: Message):
     chat_id = message.chat.id
     if user_state.get(chat_id, {}).get("state") == "awaiting_video":
-        # Check if the file is a video or document
         file_name = message.video.file_name if message.video else message.document.file_name
         file_extension = os.path.splitext(file_name)[1].lower()
         if file_extension in ['.mp4', '.mkv', '.avi', '.mov']:
@@ -51,7 +45,6 @@ async def receive_video(client: Client, message: Message):
         else:
             await message.reply_text("Please send a valid video file.")
 
-@app.on_message(filters.audio & filters.private)
 async def receive_audio(client: Client, message: Message):
     chat_id = message.chat.id
     if user_state.get(chat_id, {}).get("state") == "awaiting_audio":
