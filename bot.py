@@ -4,7 +4,7 @@ from pyrogram import Client, filters
 from pyrogram.types import Message
 import ffmpeg
 from aiohttp import web
-from config import API_ID, API_HASH, BOT_TOKEN
+from config import config
 
 app = Client(
     "media_bot",
