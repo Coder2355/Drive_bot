@@ -4,10 +4,7 @@ import subprocess
 from pyrogram import Client, filters
 from flask import Flask
 from threading import Thread
-from config import API_ID, API_HASH, BOT_TOKEN
-
-# Initialize Pyrogram Client
-app = Client("audio_trimmer_bot", api_id=API_ID, api_hash=API_HASH, bot_token=BOT_TOKEN)
+from config import Config
 
 # Initialize Flask
 flask_app = Flask(__name__)
@@ -39,7 +36,7 @@ async def trim_audio(input_file, output_file, start_time, end_time):
         return None
 
 # /trim_audio command handler
-@app.on_message(filters.command("trim_audio") & filters.reply)
+@Client.on_message(filters.command("trim_audio") & filters.reply)
 async def trim_audio_handler(client, message):
     if not message.reply_to_message.audio:
         await message.reply("Please reply to an audio file with the command.")
@@ -84,8 +81,3 @@ async def trim_audio_handler(client, message):
 
     except Exception as e:
         await status_message.edit(f"An unexpected error occurred: {e}")
-
-
-# Run the Flask server and the bot
-if __name__ == "__main__":    
-    app.run()
