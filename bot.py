@@ -1,83 +1,73 @@
-import os
-import asyncio
-import subprocess
 from pyrogram import Client, filters
-from flask import Flask
-from threading import Thread
-from config import Config
+from pyrogram.types import Message
+from pyrogram.handlers import MessageHandler
+import subprocess
+import os
 
-# Initialize Flask
-flask_app = Flask(__name__)
+# Initialize the bot
+app = Client("video_trimmer_bot", api_id="YOUR_API_ID", api_hash="YOUR_API_HASH", bot_token="YOUR_BOT_TOKEN")
 
-# Function to trim audio using FFmpeg
-async def trim_audio(input_file, output_file, start_time, end_time):
+# States for conversation
+START_TIME, END_TIME = range(2)
+
+# Dictionary to keep track of user conversations
+user_conversations = {}
+
+# Function to trim video
+def trim_video(input_path, start_time, end_time, output_path):
     command = [
-        'ffmpeg',
-        '-i', input_file,
-        '-ss', start_time,
-        '-to', end_time,
-        '-c:a', 'copy',  # Use audio-specific codec for faster processing
-        '-y',  # Overwrite output file without asking
-        output_file
+        "ffmpeg",
+        "-i", input_path,
+        "-ss", start_time,
+        "-to", end_time,
+        "-c", "copy",
+        output_path
     ]
-    
-    process = await asyncio.create_subprocess_exec(
-        *command,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE
-    )
-    stdout, stderr = await process.communicate()
+    subprocess.run(command, check=True)
 
-    if process.returncode == 0:
-        return output_file
+@app.on_message(filters.command("start"))
+def start_message(client: Client, message: Message):
+    message.reply("Send me a video to trim. After that, use `/trim` command to start the trimming process.")
+
+@app.on_message(filters.command("trim"))
+def trim_command(client: Client, message: Message):
+    if message.reply_to_message and message.reply_to_message.video:
+        user_conversations[message.from_user.id] = {"video": message.reply_to_message.video.file_id}
+        message.reply("Please enter the start time in the format `hh:mm:ss`.")
+        app.send_message(message.chat.id, "Please enter the start time in the format `hh:mm:ss`.", reply_to_message_id=message.message_id)
+        app.send_message(message.chat.id, "Waiting for start time...")
+        return START_TIME
     else:
-        error_message = stderr.decode()
-        print(f"FFmpeg error: {error_message}")
-        return None
+        message.reply("Reply to a video with the `/trim` command to start the trimming process.")
 
-# /trim_audio command handler
-@Client.on_message(filters.command("trim_audio") & filters.reply)
-async def trim_audio_handler(client, message):
-    if not message.reply_to_message.audio:
-        await message.reply("Please reply to an audio file with the command.")
-        return
+@app.on_message(filters.text & filters.reply)
+def handle_time_input(client: Client, message: Message):
+    user_id = message.from_user.id
+    if user_id in user_conversations:
+        if message.text.startswith("00:"):
+            if user_conversations[user_id].get("start_time"):
+                end_time = message.text
+                file_id = user_conversations[user_id]["video"]
+                file_path = app.download_media(file_id)
+                
+                # Generate output file path
+                output_path = file_path.replace(".mp4", "_trimmed.mp4")
 
-    try:
-        # Notify the user that the download is starting
-        status_message = await message.reply("Downloading the audio file...")
-
-        # Extracting command arguments
-        args = message.text.split()
-        if len(args) < 3:
-            await status_message.edit("Please provide the start and end times in the format: `/trim_audio start_time end_time`\nExample: `/trim_audio 00:00:10 00:00:30`")
-            return
-
-        start_time = args[1]
-        end_time = args[2]
-
-        # Downloading the audio file
-        audio = message.reply_to_message.audio
-        input_file = await client.download_media(audio)
-
-        # Notify the user that the trimming is in progress
-        await status_message.edit("Trimming the audio file...")
-
-        output_file = f"trimmed_{audio.file_name}"
-
-        # Trimming the audio
-        trimmed_file = await trim_audio(input_file, output_file, start_time, end_time)
-        if trimmed_file:
-            # Notify the user that the upload is in progress
-            await status_message.edit("Uploading the trimmed audio file...")
-
-            await message.reply_document(trimmed_file)
-            os.remove(trimmed_file)
-            await status_message.delete()  # Delete the status message after completion
+                try:
+                    trim_video(file_path, user_conversations[user_id]["start_time"], end_time, output_path)
+                    message.reply_document(output_path)
+                except Exception as e:
+                    message.reply(f"An error occurred: {str(e)}")
+                finally:
+                    os.remove(file_path)
+                    os.remove(output_path)
+                
+                del user_conversations[user_id]
+            else:
+                user_conversations[user_id]["start_time"] = message.text
+                message.reply("Start time received. Please enter the end time in the format `hh:mm:ss`.")
         else:
-            await status_message.edit("An error occurred while trimming the audio. Please ensure the start and end times are correct.")
-        
-        # Clean up the input file
-        os.remove(input_file)
+            message.reply("Please enter the time in the format `hh:mm:ss`.")
 
-    except Exception as e:
-        await status_message.edit(f"An unexpected error occurred: {e}")
+# Run the bot
+app.run()
