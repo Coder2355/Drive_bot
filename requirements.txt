@@ -2,4 +2,3 @@ pyrogram
 tgcrypto
 ffmpeg-python
 flask
-pytgcalls
