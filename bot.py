@@ -5,6 +5,7 @@ import sys
 import time
 import asyncio
 import logging 
+from config import *
 from concurrent.futures import ThreadPoolExecutor
 from flask import Flask, request, jsonify
 from pyrogram import Client, filters
