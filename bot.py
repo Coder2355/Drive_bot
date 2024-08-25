@@ -1,11 +1,11 @@
 from pyrogram import Client, filters
 from pyrogram.types import Message
-from pyrogram.handlers import MessageHandler
 import subprocess
 import os
+import config
 
-# Initialize the bot
-app = Client("video_trimmer_bot", api_id="YOUR_API_ID", api_hash="YOUR_API_HASH", bot_token="YOUR_BOT_TOKEN")
+# Initialize the bot using config file
+app = Client("video_trimmer_bot", api_id=config.API_ID, api_hash=config.API_HASH, bot_token=config.BOT_TOKEN)
 
 # States for conversation
 START_TIME, END_TIME = range(2)
