@@ -2,4 +2,4 @@ pyrogram
 tgcrypto
 ffmpeg-python
 flask
-python-dotenv
+pytgcalls==0.0.11
