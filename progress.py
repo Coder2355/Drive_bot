@@ -1,64 +1,24 @@
-import math
 import time
-from pyrogram.types import Message
 
-async def progress(current, total, message: Message, start, description):
-    now = time.time()
-    diff = now - start
+def progress_for_pyrogram(current, total, message, start_time):
+    """
+    Displays a progress bar for file downloads and uploads.
 
-    if diff < 2:  # Update progress every 2 seconds
-        return
+    Args:
+        current (int): The current progress.
+        total (int): The total size of the file.
+        message (pyrogram.types.Message): The message object for updating progress.
+        start_time (float): The time when the process started.
+    """
+    progress = int(current / total * 100)
+    elapsed_time = time.time() - start_time
+    if elapsed_time > 0:
+        speed = current / elapsed_time
+        remaining_time = (total - current) / speed if speed > 0 else 0
+        estimated_time = int(remaining_time)
 
-    percentage = current * 100 / total
-    speed = current / diff
-    time_to_completion = (total - current) / speed
-    time_to_completion = round(time_to_completion)
-    progress_str = "{0}{1} {2}%\n".format(
-        ''.join(["■" for i in range(math.floor(percentage / 10))]),
-        ''.join(["□" for i in range(10 - math.floor(percentage / 10))]),
-        round(percentage, 2),
-    )
+        progress_text = f"{progress}% - {current / (1024 * 1024):.2f}MB of {total / (1024 * 1024):.2f}MB - ETA {estimated_time // 60}m {estimated_time % 60}s"
+    else:
+        progress_text = f"{progress}% - {current / (1024 * 1024):.2f}MB of {total / (1024 * 1024):.2f}MB"
 
-    estimated_total_time = round(diff / current * total)
-    try:
-        await message.edit_text(
-            "{}\n"
-            "Progress: `{}`\n"
-            "Speed: `{}`\n"
-            "ETA: `{}`".format(
-                description,
-                progress_str,
-                humanbytes(speed),
-                time_formatter(time_to_completion),
-            )
-        )
-    except Exception as e:
-        print(f"Error updating progress: {e}")
-
-def humanbytes(size):
-    # Convert bytes to a human-readable format
-    if not size:
-        return ""
-    power = 2**10
-    n = 0
-    power_labels = {0: '', 1: 'KiB', 2: 'MiB', 3: 'GiB', 4: 'TiB'}
-    while size > power:
-        size /= power
-        n += 1
-    return f"{round(size, 2)} {power_labels[n]}"
-
-def time_formatter(seconds):
-    # Convert seconds to a human-readable time format
-    result = ""
-    (days, remainder) = divmod(seconds, 86400)
-    if days != 0:
-        result += f"{days}d"
-    (hours, remainder) = divmod(remainder, 3600)
-    if hours != 0:
-        result += f"{hours}h"
-    (minutes, seconds) = divmod(remainder, 60)
-    if minutes != 0:
-        result += f"{minutes}m"
-    if seconds != 0:
-        result += f"{seconds}s"
-    return result
+    message.edit_text(progress_text, disable_web_page_preview=True)
