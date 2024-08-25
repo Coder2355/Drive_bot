@@ -5,7 +5,7 @@ import sys
 import time
 import asyncio
 import logging 
-from config import API_ID, API_HASH, BOT_TOKEN
+import config
 from concurrent.futures import ThreadPoolExecutor
 from flask import Flask, request, jsonify
 from pyrogram import Client, filters
