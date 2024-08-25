@@ -2,3 +2,4 @@ pyrogram
 tgcrypto
 ffmpeg-python
 flask
+pillow 
