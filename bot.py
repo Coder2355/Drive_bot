@@ -1,72 +1,89 @@
 from pyrogram import Client, filters
+import os
+import subprocess
+import asyncio
 from pyrogram.types import Message
 from pyrogram.errors import FloodWait
-import subprocess
-import os
-import config
+from config import API_ID, API_HASH, BOT_TOKEN
 
-# Initialize the bot using config file
-app = Client("video_trimmer_bot", api_id=config.API_ID, api_hash=config.API_HASH, bot_token=config.BOT_TOKEN)
+# Initialize bot with your credentials
+app = Client(
+    "audio_merge_bot",
+    api_id=API_ID,
+    api_hash=API_HASH,
+    bot_token=BOT_TOKEN
+)
 
-# States for conversation
-START_TIME, END_TIME = range(2)
+AUDIO_DIR = os.getenv("AUDIO_DIR", "downloads")
 
-# Dictionary to keep track of user conversations
-user_conversations = {}
+# Global dictionary to store user sessions
+user_sessions = {}
 
-# Function to trim video
-def trim_video(input_path, start_time, end_time, output_path):
-    command = [
-        "ffmpeg",
-        "-i", input_path,
-        "-ss", start_time,
-        "-to", end_time,
-        "-c", "copy",
-        output_path
-    ]
-    subprocess.run(command, check=True)
+# Ensure the audio directory exists
+if not os.path.exists(AUDIO_DIR):
+    os.makedirs(AUDIO_DIR)
 
+# Command to start the bot
 @app.on_message(filters.command("start"))
-def start_message(client: Client, message: Message):
-    message.reply("Send me a video to trim. After that, use the `/trim` command to start the trimming process.")
+async def start(client, message):
+    await message.reply_text("Send me two audio files, and I'll merge them for you!")
 
-@app.on_message(filters.command("trim"))
-def trim_command(client: Client, message: Message):
-    if message.reply_to_message and message.reply_to_message.video:
-        user_conversations[message.from_user.id] = {"video": message.reply_to_message.video.file_id}
-        message.reply("Please enter the start time in the format `hh:mm:ss`.", reply_to_message_id=message.message_id, quote=True, reply_markup={"force_reply": True})
-        return START_TIME
-    else:
-        message.reply("Reply to a video with the `/trim` command to start the trimming process.")
+# Progress callback function
+async def progress(current, total, message: Message, task: str):
+    try:
+        progress_percentage = int(current * 100 / total)
+        await message.edit(f"{task}... {progress_percentage}%")
+    except FloodWait as e:
+        await asyncio.sleep(e.x)
 
-@app.on_message(filters.text & filters.reply)
-def handle_time_input(client: Client, message: Message):
+# Function to download the audio file
+async def download_audio(message, file_id, task_name):
+    audio_path = os.path.join(AUDIO_DIR, f"{file_id}.mp3")
+    await message.download(audio_path, progress=progress, progress_args=(message.reply_text(f"{task_name}..."), task_name))
+    return audio_path
+
+# Handle audio file or document audio file
+@app.on_message(filters.audio | filters.document)
+async def handle_audio(client, message):
     user_id = message.from_user.id
-    if user_id in user_conversations:
-        if message.text.startswith("00:"):
-            if user_conversations[user_id].get("start_time"):
-                end_time = message.text
-                file_id = user_conversations[user_id]["video"]
-                file_path = app.download_media(file_id)
-                
-                # Generate output file path
-                output_path = file_path.replace(".mp4", "_trimmed.mp4")
+    file_id = message.audio.file_id if message.audio else message.document.file_id
+    
+    # Check if this is the first or second file
+    if user_id not in user_sessions:
+        # Store the first file
+        user_sessions[user_id] = {
+            "audio1": await download_audio(message, file_id, "Downloading first audio file")
+        }
+        await message.reply_text("First audio file received. Please send the second one.")
+    else:
+        # Store the second file and start the merging process
+        user_sessions[user_id]["audio2"] = await download_audio(message, file_id, "Downloading second audio file")
+        await merge_audios(client, message)
 
-                try:
-                    trim_video(file_path, user_conversations[user_id]["start_time"], end_time, output_path)
-                    message.reply_document(output_path)
-                except Exception as e:
-                    message.reply(f"An error occurred: {str(e)}")
-                finally:
-                    os.remove(file_path)
-                    os.remove(output_path)
-                
-                del user_conversations[user_id]
-            else:
-                user_conversations[user_id]["start_time"] = message.text
-                message.reply("Start time received. Please enter the end time in the format `hh:mm:ss`.", reply_to_message_id=message.message_id, quote=True, reply_markup={"force_reply": True})
-        else:
-            message.reply("Please enter the time in the format `hh:mm:ss`.")
+# Function to merge two audio files
+async def merge_audios(client, message):
+    user_id = message.from_user.id
+    audio1 = user_sessions[user_id]["audio1"]
+    audio2 = user_sessions[user_id]["audio2"]
+    
+    output_path = os.path.join(AUDIO_DIR, f"merged_{user_id}.mp3")
+    
+    # FFmpeg command to merge audios
+    command = f"ffmpeg -i \"{audio1}\" -i \"{audio2}\" -filter_complex amerge -ac 2 -c:a libmp3lame -q:a 4 \"{output_path}\""
+    
+    try:
+        subprocess.run(command, shell=True, check=True)
+        uploading_msg = await message.reply_text("Uploading merged audio file...")
+        await client.send_audio(message.chat.id, output_path, progress=progress, progress_args=(uploading_msg, "Uploading audio file"))
+        await uploading_msg.edit("Here is your merged audio file.")
+    except Exception as e:
+        await message.reply_text(f"An error occurred while merging the audio files: {e}")
+    
+    # Clean up files
+    os.remove(audio1)
+    os.remove(audio2)
+    os.remove(output_path)
+    del user_sessions[user_id]
 
-# Run the bot
-app.run()
+if __name__ == "__main__":
+    app.run()
