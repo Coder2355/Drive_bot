@@ -69,8 +69,12 @@ async def merge_audios(client, message):
     
     output_path = os.path.join(AUDIO_DIR, f"merged_{user_id}.mp3")
     
-    # FFmpeg command to merge audios
-    command = f"ffmpeg -i \"{audio1}\" -i \"{audio2}\" -filter_complex amerge -ac 2 -c:a libmp3lame -q:a 4 \"{output_path}\""
+    # FFmpeg command to merge audios with proper synchronization
+    command = (
+        f"ffmpeg -i \"{audio1}\" -i \"{audio2}\" "
+        f"-filter_complex '[0:0] [1:0] amerge=inputs=2, dynaudnorm, "
+        f"pan=stereo|c0<c0+c2|c1<c1+c3 [a]' -map '[a]' -ac 2 -c:a libmp3lame -q:a 4 \"{output_path}\""
+    )
     
     try:
         subprocess.run(command, shell=True, check=True)
