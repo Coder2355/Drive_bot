@@ -4,7 +4,7 @@ import subprocess
 import asyncio
 from pyrogram.types import Message
 from pyrogram.errors import FloodWait
-from config import API_ID, API_HASH, BOT_TOKEN
+from config import API_ID, API_HASH, BOT_TOKEN, AUDIO_DIR
 
 # Initialize bot with your credentials
 app = Client(
@@ -29,17 +29,18 @@ async def start(client, message):
     await message.reply_text("Send me two audio files, and I'll merge them for you!")
 
 # Progress callback function
-async def progress(current, total, message: Message, task: str):
+async def progress(current, total, progress_message: Message, task: str):
     try:
         progress_percentage = int(current * 100 / total)
-        await message.edit(f"{task}... {progress_percentage}%")
+        await progress_message.edit_text(f"{task}... {progress_percentage}%")
     except FloodWait as e:
         await asyncio.sleep(e.x)
 
 # Function to download the audio file
 async def download_audio(message, file_id, task_name):
     audio_path = os.path.join(AUDIO_DIR, f"{file_id}.mp3")
-    await message.download(audio_path, progress=progress, progress_args=(message.reply_text(f"{task_name}..."), task_name))
+    progress_message = await message.reply_text(f"{task_name}...")
+    await message.download(audio_path, progress=progress, progress_args=(progress_message, task_name))
     return audio_path
 
 # Handle audio file or document audio file
@@ -75,7 +76,7 @@ async def merge_audios(client, message):
         subprocess.run(command, shell=True, check=True)
         uploading_msg = await message.reply_text("Uploading merged audio file...")
         await client.send_audio(message.chat.id, output_path, progress=progress, progress_args=(uploading_msg, "Uploading audio file"))
-        await uploading_msg.edit("Here is your merged audio file.")
+        await uploading_msg.edit_text("Here is your merged audio file.")
     except Exception as e:
         await message.reply_text(f"An error occurred while merging the audio files: {e}")
     
