@@ -4,7 +4,7 @@ import subprocess
 import asyncio
 from pyrogram.types import Message
 from pyrogram.errors import FloodWait
-from config import API_ID, API_HASH, BOT_TOKEN, AUDIO_DIR
+from config import API_ID, API_HASH, BOT_TOKEN
 
 # Initialize bot with your credentials
 app = Client(
