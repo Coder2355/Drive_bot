@@ -111,6 +111,7 @@ async def second_audio_handler(client: Client, message: Message):
     merge_audio_files.pop(user_id)
 
 async def merge_audio_files_ffmpeg(first_audio, second_audio, output):
+    # Merge audio files using FFmpeg
     await asyncio.to_thread(
         ffmpeg.input(first_audio).output(output).run, overwrite_output=True
     )
@@ -198,6 +199,7 @@ async def video_audio_handler(client: Client, message: Message):
     merge_video_file.pop(user_id)
 
 async def merge_video_audio_ffmpeg(video, audio, output):
+    # Remove existing audio and merge with new audio
     await asyncio.to_thread(
         ffmpeg.input(video).output(output, vn=True).run, overwrite_output=True  # Remove existing audio
     )
