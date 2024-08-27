@@ -53,9 +53,8 @@ async def process_second_audio(client: Client, message: Message):
             merged_audio_path = os.path.join(DOWNLOAD_DIR, f"merged_{message.chat.id}.mp3")
             (
                 ffmpeg
-                .input(first_audio_path)
-                .input(second_audio_path)
-                .output(merged_audio_path, v="0", acodec="copy")
+                .concat(ffmpeg.input(first_audio_path), ffmpeg.input(second_audio_path), v=0, a=1)
+                .output(merged_audio_path)
                 .run(overwrite_output=True)
             )
             
