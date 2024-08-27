@@ -21,7 +21,7 @@ async def merge_audio_command(client: Client, message: Message):
         downloading_message = await message.reply_text("Downloading the first audio...")
 
         # Download the first audio
-        audio_id = message.reply_to_message.message_id
+        audio_id = message.reply_to_message.id
         first_audio_path = await client.download_media(message.reply_to_message, file_name=os.path.join(DOWNLOAD_DIR, f"audio1_{audio_id}.mp3"))
         
         # Store the path of the first audio and the chat_id
@@ -41,7 +41,7 @@ async def process_second_audio(client: Client, message: Message):
             downloading_message = await message.reply_text("Downloading the second audio...")
 
             # Download the second audio
-            audio_id = message.message_id
+            audio_id = message.id
             second_audio_path = await client.download_media(message, file_name=os.path.join(DOWNLOAD_DIR, f"audio2_{audio_id}.mp3"))
             
             # Notify that the second audio has been downloaded
