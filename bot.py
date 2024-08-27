@@ -31,7 +31,7 @@ async def start_message(client: Client, message: Message):
     await message.reply_text(start_text)
 
 # /merge_audio command handler
-@app.on_message(filters.command("merge_audio"))
+@app.on_message(filters.command("merge_audio") & (filters.audio | filters.document))
 async def merge_audio_command(client: Client, message: Message):
     user_id = message.from_user.id
 
@@ -66,6 +66,10 @@ async def second_audio_handler(client: Client, message: Message):
     user_id = message.from_user.id
 
     if user_id not in merge_audio_files:
+        return
+
+    if merge_audio_files[user_id]["second_audio"]:
+        await message.reply_text("You have already sent the second audio file. Please wait while I merge the files.")
         return
 
     # Notify the user that downloading is starting
@@ -115,7 +119,7 @@ async def merge_audio_files_ffmpeg(first_audio, second_audio, output):
     )
 
 # /merge_video command handler
-@app.on_message(filters.command("merge_video"))
+@app.on_message(filters.command("merge_video") & (filters.video | filters.document))
 async def merge_video_command(client: Client, message: Message):
     user_id = message.from_user.id
 
@@ -150,6 +154,10 @@ async def video_audio_handler(client: Client, message: Message):
     user_id = message.from_user.id
 
     if user_id not in merge_video_file:
+        return
+
+    if merge_video_file[user_id]["audio"]:
+        await message.reply_text("You have already sent the audio file. Please wait while I merge the files.")
         return
 
     # Notify the user that downloading is starting
@@ -191,7 +199,7 @@ async def video_audio_handler(client: Client, message: Message):
 
 async def merge_video_audio_ffmpeg(video, audio, output):
     await asyncio.to_thread(
-        ffmpeg.input(video).output(output, vn=True).run, overwrite_output=True  # Remove audio
+        ffmpeg.input(video).output(output, vn=True).run, overwrite_output=True  # Remove existing audio
     )
     await asyncio.to_thread(
         ffmpeg.input(video).input(audio).output(output, vcodec='copy', acodec='aac').run, overwrite_output=True  # Merge with new audio
