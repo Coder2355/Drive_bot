@@ -31,7 +31,7 @@ async def start_message(client: Client, message: Message):
     await message.reply_text(start_text)
 
 # /merge_audio command handler
-@app.on_message(filters.command("merge_audio") & (filters.audio | filters.document))
+@app.on_message(filters.command("merge_audio"))
 async def merge_audio_command(client: Client, message: Message):
     user_id = message.from_user.id
 
@@ -39,7 +39,7 @@ async def merge_audio_command(client: Client, message: Message):
         await message.reply_text("You already have a pending merge process. Please finish it first.")
         return
 
-    if not message.reply_to_message:
+    if not message.reply_to_message or not (message.reply_to_message.audio or message.reply_to_message.document):
         await message.reply_text("Please reply to the first audio file with the /merge_audio command.")
         return
 
@@ -115,7 +115,7 @@ async def merge_audio_files_ffmpeg(first_audio, second_audio, output):
     )
 
 # /merge_video command handler
-@app.on_message(filters.command("merge_video") & (filters.video | filters.document))
+@app.on_message(filters.command("merge_video"))
 async def merge_video_command(client: Client, message: Message):
     user_id = message.from_user.id
 
@@ -123,7 +123,7 @@ async def merge_video_command(client: Client, message: Message):
         await message.reply_text("You already have a pending merge process. Please finish it first.")
         return
 
-    if not message.reply_to_message:
+    if not message.reply_to_message or not (message.reply_to_message.video or message.reply_to_message.document):
         await message.reply_text("Please reply to the video file with the /merge_video command.")
         return
 
