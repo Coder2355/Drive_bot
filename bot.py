@@ -31,7 +31,7 @@ async def start_message(client: Client, message: Message):
     await message.reply_text(start_text)
 
 # /merge_audio command handler
-@app.on_message(filters.command("merge_audio") & (filters.audio | filters.document))
+@app.on_message(filters.command("merge_audio") & (filters.audio | filters.document) & filters.reply)
 async def merge_audio_command(client: Client, message: Message):
     user_id = message.from_user.id
 
