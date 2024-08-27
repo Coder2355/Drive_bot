@@ -56,7 +56,7 @@ async def merge_audio_command(client: Client, message: Message):
     await message.reply_text("First audio file downloaded. Now, send the second audio file to merge.")
 
 # Handle the second audio file
-@app.on_message((filters.audio | filters.document) & filters.user(merge_audio_files.keys()))
+@app.on_message((filters.audio | filters.document) & filters.user(lambda _, __, m: m.from_user.id in merge_audio_files))
 async def second_audio_handler(client: Client, message: Message):
     user_id = message.from_user.id
 
@@ -118,7 +118,7 @@ async def merge_video_command(client: Client, message: Message):
     await message.reply_text("Video file downloaded. Now, send the audio file to merge.")
 
 # Handle the audio file for video+audio merging
-@app.on_message(filters.audio & filters.user(merge_video_file.keys()))
+@app.on_message(filters.audio & filters.user(lambda _, __, m: m.from_user.id in merge_video_file))
 async def video_audio_handler(client: Client, message: Message):
     user_id = message.from_user.id
 
