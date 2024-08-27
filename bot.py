@@ -43,6 +43,9 @@ async def merge_audio_command(client: Client, message: Message):
         await message.reply_text("Please reply to the first audio file with the /merge_audio command.")
         return
 
+    # Notify the user that downloading is starting
+    download_msg = await message.reply_text("Downloading the first audio file...")
+
     # Download the first audio file
     audio_file_path = await message.reply_to_message.download()
 
@@ -53,6 +56,8 @@ async def merge_audio_command(client: Client, message: Message):
         "output": f"merged_audio_{user_id}.mp3"
     }
 
+    # Update the user and remove the download message
+    await download_msg.delete()
     await message.reply_text("First audio file downloaded. Now, send the second audio file to merge.")
 
 # Handle the second audio file
@@ -63,11 +68,18 @@ async def second_audio_handler(client: Client, message: Message):
     if user_id not in merge_audio_files:
         return
 
+    # Notify the user that downloading is starting
+    download_msg = await message.reply_text("Downloading the second audio file...")
+
     # Download the second audio file
     second_audio_path = await message.download()
 
     # Update the second audio file path in the dictionary
     merge_audio_files[user_id]["second_audio"] = second_audio_path
+
+    # Update the user and remove the download message
+    await download_msg.delete()
+    await message.reply_text("Second audio file downloaded. Merging the audio files...")
 
     # Paths
     first_audio = merge_audio_files[user_id]["first_audio"]
@@ -77,8 +89,14 @@ async def second_audio_handler(client: Client, message: Message):
     # Merge audio files using FFmpeg
     await merge_audio_files_ffmpeg(first_audio, second_audio, output_file)
 
+    # Notify the user that uploading is starting
+    upload_msg = await message.reply_text("Uploading the merged audio file...")
+
     # Send the merged audio
     await message.reply_audio(audio=output_file)
+
+    # Clean up and delete the upload message
+    await upload_msg.delete()
 
     # Clean up
     os.remove(first_audio)
@@ -89,8 +107,12 @@ async def second_audio_handler(client: Client, message: Message):
     merge_audio_files.pop(user_id)
 
 async def merge_audio_files_ffmpeg(first_audio, second_audio, output):
-    ffmpeg.input(first_audio).output(output).run(overwrite_output=True)
-    ffmpeg.input(second_audio).output(output, filter_complex='[0][1]amix=inputs=2:duration=first:dropout_transition=2').run(overwrite_output=True)
+    await asyncio.to_thread(
+        ffmpeg.input(first_audio).output(output).run, overwrite_output=True
+    )
+    await asyncio.to_thread(
+        ffmpeg.input(second_audio).output(output, filter_complex='[0][1]amix=inputs=2:duration=first:dropout_transition=2').run, overwrite_output=True
+    )
 
 # /merge_video command handler
 @app.on_message(filters.command("merge_video") & (filters.video | filters.document))
@@ -105,6 +127,9 @@ async def merge_video_command(client: Client, message: Message):
         await message.reply_text("Please reply to the video file with the /merge_video command.")
         return
 
+    # Notify the user that downloading is starting
+    download_msg = await message.reply_text("Downloading the video file...")
+
     # Download the video file
     video_file_path = await message.reply_to_message.download()
 
@@ -115,6 +140,8 @@ async def merge_video_command(client: Client, message: Message):
         "output": f"merged_video_{user_id}.mp4"
     }
 
+    # Update the user and remove the download message
+    await download_msg.delete()
     await message.reply_text("Video file downloaded. Now, send the audio file to merge.")
 
 # Handle the audio file for video+audio merging
@@ -125,11 +152,18 @@ async def video_audio_handler(client: Client, message: Message):
     if user_id not in merge_video_file:
         return
 
+    # Notify the user that downloading is starting
+    download_msg = await message.reply_text("Downloading the audio file...")
+
     # Download the audio file
     audio_file_path = await message.download()
 
     # Update the audio file path in the dictionary
     merge_video_file[user_id]["audio"] = audio_file_path
+
+    # Update the user and remove the download message
+    await download_msg.delete()
+    await message.reply_text("Audio file downloaded. Merging with the video...")
 
     # Paths
     video_file = merge_video_file[user_id]["video"]
@@ -138,8 +172,14 @@ async def video_audio_handler(client: Client, message: Message):
     # Remove existing audio and merge with new audio
     await merge_video_audio_ffmpeg(video_file, audio_file_path, output_file)
 
+    # Notify the user that uploading is starting
+    upload_msg = await message.reply_text("Uploading the merged video file...")
+
     # Send the merged video
     await message.reply_video(video=output_file)
+
+    # Clean up and delete the upload message
+    await upload_msg.delete()
 
     # Clean up
     os.remove(video_file)
@@ -150,8 +190,12 @@ async def video_audio_handler(client: Client, message: Message):
     merge_video_file.pop(user_id)
 
 async def merge_video_audio_ffmpeg(video, audio, output):
-    ffmpeg.input(video).output(output, vn=True).run(overwrite_output=True)  # Remove audio
-    ffmpeg.input(video).input(audio).output(output, vcodec='copy', acodec='aac').run(overwrite_output=True)  # Merge with new audio
+    await asyncio.to_thread(
+        ffmpeg.input(video).output(output, vn=True).run, overwrite_output=True  # Remove audio
+    )
+    await asyncio.to_thread(
+        ffmpeg.input(video).input(audio).output(output, vcodec='copy', acodec='aac').run, overwrite_output=True  # Merge with new audio
+    )
 
 if __name__ == "__main__":
     app.run()
