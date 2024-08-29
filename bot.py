@@ -1,153 +1,36 @@
-import os
-import asyncio
 from pyrogram import Client, filters
-from pyrogram.types import Message, InlineKeyboardMarkup, InlineKeyboardButton
+from pyrogram.types import InlineKeyboardMarkup, InlineKeyboardButton
+import os
 import ffmpeg
+import time
 from hachoir.metadata import extractMetadata
 from hachoir.parser import createParser
-from config import API_ID, API_HASH, BOT_TOKEN, DOWNLOAD_DIR
 
-# Initialize the bot with your API credentials
-app = Client("audio_merger_bot", api_id=API_ID, api_hash=API_HASH, bot_token=BOT_TOKEN)
+# Initialize the bot
+app = Client("audio_converter_bot")
 
-if not os.path.exists(DOWNLOAD_DIR):
-    os.makedirs(DOWNLOAD_DIR)
+# Inline keyboard buttons for audio formats
+audio_formats = InlineKeyboardMarkup([
+    [InlineKeyboardButton("AC3", callback_data="ac3"), InlineKeyboardButton("MP3", callback_data="mp3")],
+    [InlineKeyboardButton("WAV", callback_data="wav"), InlineKeyboardButton("FLAC", callback_data="flac")],
+    [InlineKeyboardButton("OGG", callback_data="ogg"), InlineKeyboardButton("OPUS", callback_data="opus")],
+    [InlineKeyboardButton("AAC", callback_data="aac"), InlineKeyboardButton("M4A", callback_data="m4a")],
+    [InlineKeyboardButton("AIFF", callback_data="aiff"), InlineKeyboardButton("WMA", callback_data="wma")],
+    [InlineKeyboardButton("CANCEL", callback_data="cancel")]
+])
 
-# Dictionary to store user status for audio merging
-merger = {}
-# Store the audio files for merging
-audio_storage = {}
+# Progress callback function
+async def progress(current, total, message, action):
+    percent_complete = current * 100 / total
+    await message.edit_text(f"{action}: {percent_complete:.1f}%")
 
-@app.on_message(filters.audio | filters.document)
-async def audio_handler(client: Client, message: Message):
-    # Create the inline keyboard with the audio+audio button
-    keyboard = InlineKeyboardMarkup(
-        [[InlineKeyboardButton("audio+audio", callback_data="merge_audio")]]
-    )
-    # Send the prompt message with a force reply
-    await message.reply_text(
-        "Select an option:", 
-        reply_markup=keyboard,
-        reply_to_message_id=message.id  # Force reply to the original audio message
-    )
-
-@app.on_callback_query(filters.regex("merge_audio"))
-async def on_audio_plus_audio_button(client: Client, callback_query):
-    user_id = callback_query.from_user.id
-    chat_id = callback_query.message.chat.id
-
-    # Check if the callback message is a reply to another message with audio or document
-    reply_message = callback_query.message.reply_to_message
-    if reply_message and (reply_message.audio or reply_message.document):
-        # Store the user ID and audio details in the dictionaries
-        merger[chat_id] = user_id
-        audio_storage[chat_id] = {"first_audio": reply_message}
-
-        # Send downloading message
-        downloading_message = await callback_query.message.reply_text("Downloading the first audio... 🎵")
-
-        # Download the first audio
-        audio_id = reply_message.id
-        first_audio_path = await client.download_media(
-            reply_message,
-            file_name=os.path.join(DOWNLOAD_DIR, f"audio1_{audio_id}.mp3"),
-            progress=progress_bar,
-            progress_args=(downloading_message, "Downloading first audio 🎵")  # Pass the actual message object
-        )
-
-        # Update path in audio storage
-        audio_storage[chat_id]["first_audio"] = first_audio_path
-
-        # Notify that the first audio has been downloaded
-        await downloading_message.edit_text("First audio downloaded. Please send the second audio file.")
-    else:
-        await callback_query.message.reply_text("Please reply to an audio file or document with the audio+audio button.")
-
-@app.on_message(filters.audio | filters.document)
-async def process_audio(client: Client, message: Message):
-    chat_id = message.chat.id
-    user_id = message.from_user.id
-
-    # Check if user is in the merger dictionary
-    if chat_id in merger and merger[chat_id] == user_id:
-        if message.audio or message.document:
-            # Ensure that the message is a reply to the original audio
-            if message.reply_to_message and (message.reply_to_message.audio or message.reply_to_message.document):
-                # Send downloading message
-                downloading_message = await message.reply_text("Downloading the second audio... 🎵")
-
-                # Download the second audio
-                audio_id = message.id
-                second_audio_path = await client.download_media(
-                    message,
-                    file_name=os.path.join(DOWNLOAD_DIR, f"audio2_{audio_id}.mp3"),
-                    progress=progress_bar,
-                    progress_args=(downloading_message, "Downloading second audio 🎵")  # Pass the actual message object
-                )
-
-                # Notify that the second audio has been downloaded
-                await downloading_message.edit_text("Second audio downloaded. Merging the audios... 🎵")
-
-                first_audio_path = audio_storage[chat_id]["first_audio"]
-
-                # Merge the two audio files using FFmpeg
-                merged_audio_path = os.path.join(DOWNLOAD_DIR, f"merged_{chat_id}.mp3")
-                (
-                    ffmpeg
-                    .concat(ffmpeg.input(first_audio_path), ffmpeg.input(second_audio_path), v=0, a=1)
-                    .output(merged_audio_path)
-                    .run(overwrite_output=True)
-                )
-
-                # Extract metadata
-                title, artist, duration, thumb = extract_audio_metadata(merged_audio_path)
-
-                # Send uploading message
-                uploading_message = await message.reply_text("Uploading the merged audio... 🎵")
-
-                # Send the merged audio file with metadata
-                await client.send_audio(
-                    chat_id=chat_id,
-                    audio=merged_audio_path,
-                    caption=f"Here's your merged audio! 🎵\n\nTitle: {title}\nArtist: {artist}\nDuration: {duration} seconds",
-                    thumb=thumb,
-                    title=title,
-                    performer=artist,
-                    duration=duration
-                )
-
-                # Notify that the upload is complete
-                await uploading_message.delete()
-
-                # Clean up
-                os.remove(first_audio_path)
-                os.remove(second_audio_path)
-                os.remove(merged_audio_path)
-                del audio_storage[chat_id]
-                del merger[chat_id]
-            else:
-                await message.reply_text("Please reply to the first audio file when sending the second one.")
-        else:
-            await message.reply_text("Please send a valid audio file or document.")
-    else:
-        # If the user is not in the merger dictionary, process normally or start a new merge
-        await message.reply_text("No merge process is active. Please start a new one with the audio+audio button.")
-
-@app.on_message(filters.command("start"))
-async def start(client: Client, message: Message):
-    await message.reply_text("Hello! Send an audio file or document, then click the audio+audio button to start the merging process.")
-
-# Progress bar function
-async def progress_bar(current, total, message, description):
-    progress = f"{description}\n[{current * 100 / total:.1f}%]"
-    await message.edit_text(progress)
-
-# Function to extract audio metadata
+# Function to extract metadata
 def extract_audio_metadata(file_loc):
     title = None
     artist = None
     thumb = None
     duration = 0
+    size = os.path.getsize(file_loc)
 
     metadata = extractMetadata(createParser(file_loc))
     if metadata:
@@ -158,6 +41,76 @@ def extract_audio_metadata(file_loc):
         if metadata.has("duration"):
             duration = metadata.get("duration").seconds
 
-    return title, artist, duration, thumb
+    return title, artist, duration, size
 
-app.run()
+# Handle the /convert_audio command
+@app.on_message(filters.command("convert_audio") & filters.reply)
+async def convert_audio(client, message):
+    # Check if the reply is to an audio file or document
+    if not (message.reply_to_message.audio or message.reply_to_message.document):
+        await message.reply_text("Please reply to an audio file or document with the /convert_audio command.")
+        return
+
+    # Download the audio file with progress
+    download_message = await message.reply_text("Downloading...")
+    file = await message.reply_to_message.download(progress=progress, progress_args=(download_message, "Downloading"))
+
+    # Extract metadata
+    title, artist, duration, size = extract_audio_metadata(file)
+    
+    # Add metadata info to the message
+    metadata_info = f"Title: {title or 'Unknown'}\nArtist: {artist or 'Unknown'}\nDuration: {duration // 60}:{duration % 60:02d}\nSize: {size / (1024 * 1024):.2f} MB"
+    await download_message.edit_text(
+        f"{metadata_info}\n\nPlease choose the format you want to convert to:", 
+        reply_markup=audio_formats,
+        quote=True
+    )
+
+    # Store the file path in the user's session for further processing
+    app.set_data(message.from_user.id, {'file_path': file})
+
+# Handle the callback queries from the inline keyboard
+@app.on_callback_query()
+async def handle_callback(client, callback_query):
+    user_data = app.get_data(callback_query.from_user.id)
+    file_path = user_data.get('file_path')
+    
+    if not file_path:
+        await callback_query.message.edit_text("Error: No file found. Please reply to an audio file first.")
+        return
+
+    format_selected = callback_query.data
+
+    if format_selected == "cancel":
+        await callback_query.message.edit_text("Conversion canceled.")
+        os.remove(file_path)
+        return
+
+    new_file_path = f"{os.path.splitext(file_path)[0]}.{format_selected}"
+
+    try:
+        await callback_query.message.edit_text(f"Converting to {format_selected.upper()}...")
+        
+        # Convert the audio using FFmpeg
+        ffmpeg.input(file_path).output(new_file_path).run()
+
+        # Send the converted file with progress
+        upload_message = await callback_query.message.edit_text("Uploading...")
+        await client.send_document(
+            chat_id=callback_query.message.chat.id,
+            document=new_file_path,
+            caption=f"Here is your file converted to {format_selected.upper()}",
+            progress=progress,
+            progress_args=(upload_message, "Uploading")
+        )
+        
+        # Delete files after conversion
+        os.remove(file_path)
+        os.remove(new_file_path)
+
+    except Exception as e:
+        await callback_query.message.edit_text(f"Error during conversion: {str(e)}")
+        os.remove(file_path)
+
+if __name__ == "__main__":
+    app.run()
