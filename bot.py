@@ -31,7 +31,7 @@ async def compress_audio(input_file: str, output_file: str):
     try:
         # Use FFmpeg to compress the audio
         await asyncio.create_subprocess_exec(
-            'ffmpeg', '-i', input_file, '-c:a', 'aac', '-b:a', '128k', '-y', output_file
+            'ffmpeg', '-i', input_file, '-c:a', 'aac', '-b:a', '34k', '-y', output_file
         )
     except Exception as e:
         print(f"Error during compression: {e}")
