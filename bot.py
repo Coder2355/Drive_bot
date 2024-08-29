@@ -31,7 +31,7 @@ async def progress(current, total, message, start_time):
 async def compress_audio(input_file: str, output_file: str):
     try:
         process = await asyncio.create_subprocess_exec(
-            'ffmpeg', '-i', input_file, '-c:a', 'aac', '-b:a', '34k', '-y', output_file,
+            'ffmpeg', '-i', input_file, '-c:a', 'opus', '-b:a', '34k', '-y', output_file,
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE
         )
