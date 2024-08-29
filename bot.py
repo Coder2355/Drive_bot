@@ -1,7 +1,7 @@
 import os
 import asyncio
 from pyrogram import Client, filters
-from pyrogram.types import Message
+from pyrogram.types import Message, InlineKeyboardMarkup, InlineKeyboardButton
 import ffmpeg
 from time import time
 from hachoir.metadata import extractMetadata
@@ -10,6 +10,9 @@ from config import API_ID, API_HASH, BOT_TOKEN
 
 # Create a Pyrogram Client
 app = Client("audio_compressor_bot", api_id=API_ID, api_hash=API_HASH, bot_token=BOT_TOKEN)
+
+# Global variable to store file paths and format choices
+downloaded_files = {}
 
 # Progress function for download and upload
 async def progress(current, total, message, start_time):
@@ -27,13 +30,10 @@ async def progress(current, total, message, start_time):
         await message.edit(text)
 
 # Function to compress audio using FFmpeg
-async def compress_audio(input_file: str, output_file: str):
+async def compress_audio(input_file: str, output_file: str, codec: str, bitrate: str):
     try:
-        # Change the output file extension to .ogg for Opus format
-        output_file = os.path.splitext(output_file)[0] + ".ogg"
-        
         process = await asyncio.create_subprocess_exec(
-            'ffmpeg', '-i', input_file, '-c:a', 'libopus', '-b:a', '34k', '-y', output_file,
+            'ffmpeg', '-i', input_file, '-c:a', codec, '-b:a', bitrate, '-y', output_file,
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE
         )
@@ -80,46 +80,100 @@ async def compress_audio_command(client: Client, message: Message):
             progress=progress, progress_args=(status_message, start_time)
         )
         
-        # Extract metadata
-        title, artist, duration, thumb = extract_audio_metadata(file_path)
-        file_size = os.path.getsize(file_path)
+        # Store the downloaded file path associated with the message ID
+        downloaded_files[message.message_id] = file_path
 
-        # Log metadata (optional)
-        print(f"Title: {title}, Artist: {artist}, Duration: {duration} seconds, Size: {file_size} bytes")
-        
-        # Define the output file path
-        output_file = f"compressed_{os.path.basename(file_path)}"
-        
-        # Inform the user that compression is starting
-        await status_message.edit("Compressing audio file...")
-        
-        # Compress the audio file
-        compressed_file = await compress_audio(file_path, output_file)
-        
-        if not compressed_file or os.path.getsize(compressed_file) == 0:
-            await status_message.edit("Compression failed. Please try again.")
-            return
+        # Ask the user for the output format using inline keyboard buttons
+        buttons = [
+            [InlineKeyboardButton("MP3", callback_data=f"compress_mp3_{message.message_id}")],
+            [InlineKeyboardButton("AAC", callback_data=f"compress_aac_{message.message_id}")],
+            [InlineKeyboardButton("Opus", callback_data=f"compress_opus_{message.message_id}")],
+            [InlineKeyboardButton("OGG", callback_data=f"compress_ogg_{message.message_id}")],
+            [InlineKeyboardButton("WAV", callback_data=f"compress_wav_{message.message_id}")],
+            [InlineKeyboardButton("AC3", callback_data=f"compress_ac3_{message.message_id}")],
+            [InlineKeyboardButton("Cancel", callback_data=f"compress_cancel_{message.message_id}")]
+        ]
 
-        # Inform the user that the upload is starting
-        await status_message.edit("Uploading compressed audio file...")
-        
-        # Upload the compressed audio file with progress
-        start_time = time()
-        await message.reply_document(
-            compressed_file, 
-            caption=f"**Title:** {title}\n**Artist:** {artist}\n**Duration:** {duration} seconds\n**Size:** {file_size / (1024 * 1024):.2f} MB",
-            progress=progress, 
-            progress_args=(status_message, start_time)
+        await status_message.edit(
+            "Please select the output format for compression:",
+            reply_markup=InlineKeyboardMarkup(buttons)
         )
-        
-        # Clean up temporary files
-        os.remove(file_path)
-        os.remove(compressed_file)
-        
-        # Inform the user that the process is complete
-        await status_message.edit("Audio compression complete.")
     else:
         await message.reply_text("Please reply to an audio or document file to compress.")
+
+# Callback handler for format selection
+@app.on_callback_query(filters.regex(r"compress_(.*?)_(\d+)"))
+async def format_selection(client: Client, callback_query):
+    data = callback_query.data.split("_")
+    format_choice = data[1]
+    message_id = int(data[2])
+
+    # Retrieve the downloaded file path
+    file_path = downloaded_files.get(message_id)
+    
+    if not file_path:
+        await callback_query.message.edit("File not found. Please try again.")
+        return
+
+    if format_choice == "cancel":
+        # Clean up and inform the user
+        os.remove(file_path)
+        del downloaded_files[message_id]
+        await callback_query.message.edit("Compression cancelled.")
+        return
+
+    # Define codec and extension based on the format choice
+    codec_map = {
+        "mp3": ("libmp3lame", "128k", ".mp3"),
+        "aac": ("aac", "34k", ".aac"),
+        "opus": ("libopus", "34k", ".opus"),
+        "ogg": ("libvorbis", "34k", ".ogg"),
+        "wav": ("pcm_s16le", "34k", ".wav"),
+        "ac3": ("ac3", "192k", ".ac3")
+    }
+
+    codec, bitrate, extension = codec_map.get(format_choice, (None, None, None))
+
+    if codec is None:
+        await callback_query.message.edit("Invalid format selected. Please try again.")
+        return
+
+    # Extract metadata
+    title, artist, duration, thumb = extract_audio_metadata(file_path)
+    file_size = os.path.getsize(file_path)
+
+    # Define the output file path
+    output_file = f"compressed_{os.path.basename(file_path)}{extension}"
+    
+    # Inform the user that compression is starting
+    await callback_query.message.edit("Compressing audio file...")
+    
+    # Compress the audio file
+    compressed_file = await compress_audio(file_path, output_file, codec, bitrate)
+    
+    if not compressed_file or os.path.getsize(compressed_file) == 0:
+        await callback_query.message.edit("Compression failed. Please try again.")
+        return
+
+    # Inform the user that the upload is starting
+    await callback_query.message.edit("Uploading compressed audio file...")
+    
+    # Upload the compressed audio file with progress
+    start_time = time()
+    await callback_query.message.reply_document(
+        compressed_file, 
+        caption=f"**Title:** {title}\n**Artist:** {artist}\n**Duration:** {duration} seconds\n**Size:** {file_size / (1024 * 1024):.2f} MB",
+        progress=progress, 
+        progress_args=(callback_query.message, start_time)
+    )
+    
+    # Clean up temporary files
+    os.remove(file_path)
+    os.remove(compressed_file)
+    del downloaded_files[message_id]
+
+    # Inform the user that the process is complete
+    await callback_query.message.edit("Audio compression complete.")
 
 # Run the bot
 app.run()
