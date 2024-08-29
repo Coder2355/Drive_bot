@@ -5,11 +5,13 @@ import ffmpeg
 import time
 from hachoir.metadata import extractMetadata
 from hachoir.parser import createParser
+from config import API_ID, API_HASH, BOT_TOKEN
 
 # Initialize the bot
-app = Client("audio_converter_bot")
-
+# Initialize the bot
+app = Client("audio_converter_bot", api_id=API_ID, api_hash=API_HASH, bot_token=BOT_TOKEN)
 # Inline keyboard buttons for audio formats
+
 audio_formats = InlineKeyboardMarkup([
     [InlineKeyboardButton("AC3", callback_data="ac3"), InlineKeyboardButton("MP3", callback_data="mp3")],
     [InlineKeyboardButton("WAV", callback_data="wav"), InlineKeyboardButton("FLAC", callback_data="flac")],
