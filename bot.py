@@ -61,18 +61,21 @@ async def convert_audio(client, message):
         await message.reply_text("Please reply to an audio file or document with the /convert_audio command.")
         return
 
+    # Download the audio file with progress
     download_message = await message.reply_text("Downloading...")
     file = await message.reply_to_message.download(progress=progress, progress_args=(download_message, "Downloading"))
 
+    # Extract metadata
     title, artist, duration, size = extract_audio_metadata(file)
     
+    # Add metadata info to the message
     metadata_info = f"Title: {title or 'Unknown'}\nArtist: {artist or 'Unknown'}\nDuration: {duration // 60}:{duration % 60:02d}\nSize: {size / (1024 * 1024):.2f} MB"
     await download_message.edit_text(
         f"{metadata_info}\n\nPlease choose the format you want to convert to:", 
-        reply_markup=audio_formats,
-        quote=True
+        reply_markup=audio_formats
     )
 
+    # Store the file path in the user's session for further processing
     app.set_data(message.from_user.id, {'file_path': file})
 
 # Handle the callback queries from the inline keyboard
