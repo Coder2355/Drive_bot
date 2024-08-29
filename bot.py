@@ -24,7 +24,7 @@ async def audio_handler(client: Client, message: Message):
     keyboard = InlineKeyboardMarkup(
         [[InlineKeyboardButton("audio+audio", callback_data="merge_audio")]]
     )
-    await message.reply_text("Select an option:", reply_markup=keyboard)
+    await message.reply_text("Select an option:", reply_markup=keyboard, quota=true)
 
 @app.on_callback_query(filters.regex("merge_audio"))
 async def on_audio_plus_audio_button(client: Client, callback_query):
