@@ -8,10 +8,9 @@ from hachoir.parser import createParser
 from config import API_ID, API_HASH, BOT_TOKEN
 
 # Initialize the bot
-# Initialize the bot
 app = Client("audio_converter_bot", api_id=API_ID, api_hash=API_HASH, bot_token=BOT_TOKEN)
-# Inline keyboard buttons for audio formats
 
+# Inline keyboard buttons for audio formats
 audio_formats = InlineKeyboardMarkup([
     [InlineKeyboardButton("AC3", callback_data="ac3"), InlineKeyboardButton("MP3", callback_data="mp3")],
     [InlineKeyboardButton("WAV", callback_data="wav"), InlineKeyboardButton("FLAC", callback_data="flac")],
@@ -45,22 +44,28 @@ def extract_audio_metadata(file_loc):
 
     return title, artist, duration, size
 
+# Handle the /start command
+@app.on_message(filters.command("start"))
+async def start(client, message):
+    await message.reply_text(
+        "Welcome to the Audio Converter Bot! 🛠️\n\n"
+        "To convert an audio file, reply to it with the /convert_audio command.\n"
+        "You can then select the format you want to convert it to using the inline keyboard.",
+        quote=True
+    )
+
 # Handle the /convert_audio command
 @app.on_message(filters.command("convert_audio") & filters.reply)
 async def convert_audio(client, message):
-    # Check if the reply is to an audio file or document
     if not (message.reply_to_message.audio or message.reply_to_message.document):
         await message.reply_text("Please reply to an audio file or document with the /convert_audio command.")
         return
 
-    # Download the audio file with progress
     download_message = await message.reply_text("Downloading...")
     file = await message.reply_to_message.download(progress=progress, progress_args=(download_message, "Downloading"))
 
-    # Extract metadata
     title, artist, duration, size = extract_audio_metadata(file)
     
-    # Add metadata info to the message
     metadata_info = f"Title: {title or 'Unknown'}\nArtist: {artist or 'Unknown'}\nDuration: {duration // 60}:{duration % 60:02d}\nSize: {size / (1024 * 1024):.2f} MB"
     await download_message.edit_text(
         f"{metadata_info}\n\nPlease choose the format you want to convert to:", 
@@ -68,7 +73,6 @@ async def convert_audio(client, message):
         quote=True
     )
 
-    # Store the file path in the user's session for further processing
     app.set_data(message.from_user.id, {'file_path': file})
 
 # Handle the callback queries from the inline keyboard
@@ -93,10 +97,8 @@ async def handle_callback(client, callback_query):
     try:
         await callback_query.message.edit_text(f"Converting to {format_selected.upper()}...")
         
-        # Convert the audio using FFmpeg
         ffmpeg.input(file_path).output(new_file_path).run()
 
-        # Send the converted file with progress
         upload_message = await callback_query.message.edit_text("Uploading...")
         await client.send_document(
             chat_id=callback_query.message.chat.id,
@@ -106,7 +108,6 @@ async def handle_callback(client, callback_query):
             progress_args=(upload_message, "Uploading")
         )
         
-        # Delete files after conversion
         os.remove(file_path)
         os.remove(new_file_path)
 
