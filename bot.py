@@ -31,7 +31,7 @@ async def progress(current, total, message, start_time):
 async def compress_audio(input_file: str, output_file: str):
     try:
         process = await asyncio.create_subprocess_exec(
-            'ffmpeg', '-i', input_file, '-c:a', 'aac', '-b:a', '128k', '-y', output_file,
+            'ffmpeg', '-i', input_file, '-c:a', 'aac', '-b:a', '34k', '-y', output_file,
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE
         )
@@ -75,7 +75,7 @@ async def compress_audio_command(client: Client, message: Message):
         # Download the file with progress
         start_time = time()
         file_path = await message.reply_to_message.download(
-            progress=progress, progress_args=(status_message, "Downloading audio file", start_time)
+            progress=progress, progress_args=(status_message, start_time)
         )
         
         # Extract metadata
@@ -107,7 +107,7 @@ async def compress_audio_command(client: Client, message: Message):
             output_file, 
             caption=f"**Title:** {title}\n**Artist:** {artist}\n**Duration:** {duration} seconds\n**Size:** {file_size / (1024 * 1024):.2f} MB",
             progress=progress, 
-            progress_args=(status_message, "uploading compressed audio file", start_time)
+            progress_args=(status_message, start_time)
         )
         
         # Clean up temporary files
