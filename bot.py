@@ -2,7 +2,7 @@ from pyrogram import Client, filters
 from pyrogram.types import InlineKeyboardMarkup, InlineKeyboardButton
 import os
 import ffmpeg
-import time
+import asyncio
 from hachoir.metadata import extractMetadata
 from hachoir.parser import createParser
 from config import API_ID, API_HASH, BOT_TOKEN
@@ -32,9 +32,9 @@ async def progress(current, total, message, action):
 def extract_audio_metadata(file_loc):
     title = None
     artist = None
-    thumb = None
     duration = 0
     size = os.path.getsize(file_loc)
+    format = os.path.splitext(file_loc)[1].lstrip('.').upper()
 
     metadata = extractMetadata(createParser(file_loc))
     if metadata:
@@ -45,7 +45,7 @@ def extract_audio_metadata(file_loc):
         if metadata.has("duration"):
             duration = metadata.get("duration").seconds
 
-    return title, artist, duration, size
+    return title, artist, duration, size, format
 
 # Handle the /start command
 @app.on_message(filters.command("start"))
@@ -64,12 +64,14 @@ async def convert_audio(client, message):
         await message.reply_text("Please reply to an audio file or document with the /convert_audio command.")
         return
 
+    # Download the audio file with progress
     download_message = await message.reply_text("Downloading...")
     file = await message.reply_to_message.download(progress=progress, progress_args=(download_message, "Downloading"))
 
-    title, artist, duration, size = extract_audio_metadata(file)
+    # Extract metadata
+    title, artist, duration, size, file_format = extract_audio_metadata(file)
     
-    metadata_info = f"Title: {title or 'Unknown'}\nArtist: {artist or 'Unknown'}\nDuration: {duration // 60}:{duration % 60:02d}\nSize: {size / (1024 * 1024):.2f} MB"
+    metadata_info = f"Title: {title or 'Unknown'}\nArtist: {artist or 'Unknown'}\nDuration: {duration // 60}:{duration % 60:02d}\nSize: {size / (1024 * 1024):.2f} MB\nFormat: {file_format}"
     await download_message.edit_text(
         f"{metadata_info}\n\nPlease choose the format you want to convert to:", 
         reply_markup=audio_formats
@@ -90,10 +92,10 @@ async def handle_callback(client, callback_query):
 
     format_selected = callback_query.data
 
-    if format_selected == "cancel":
-        await callback_query.message.edit_text("Conversion canceled.")
-        os.remove(file_path)
-        user_data.pop(user_id, None)  # Remove user data
+    # Check if the file is already in the desired format
+    _, _, _, _, current_format = extract_audio_metadata(file_path)
+    if current_format.upper() == format_selected.upper():
+        await callback_query.message.edit_text("The audio file is already in the desired format.")
         return
 
     new_file_path = f"{os.path.splitext(file_path)[0]}.{format_selected}"
@@ -101,10 +103,11 @@ async def handle_callback(client, callback_query):
     try:
         await callback_query.message.edit_text(f"Converting to {format_selected.upper()}...")
         
-        ffmpeg.input(file_path).output(new_file_path).run()
+        # Convert the audio using FFmpeg
+        await asyncio.to_thread(ffmpeg.input(file_path).output(new_file_path).run)
 
         upload_message = await callback_query.message.edit_text("Uploading...")
-        await client.send_document(
+        await client.document(
             chat_id=callback_query.message.chat.id,
             document=new_file_path,
             caption=f"Here is your file converted to {format_selected.upper()}",
