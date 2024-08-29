@@ -32,30 +32,34 @@ async def on_audio_plus_audio_button(client: Client, callback_query):
     user_id = callback_query.from_user.id
     chat_id = callback_query.message.chat.id
 
-    # Store the user ID in the merger dictionary
-    merger[chat_id] = user_id
+    # Check if the message is a reply to another message with audio or document
+    if callback_query.message.reply_to_message and (callback_query.message.reply_to_message.audio or callback_query.message.reply_to_message.document):
+        # Store the user ID in the merger dictionary
+        merger[chat_id] = user_id
 
-    # Send downloading message
-    downloading_message = await callback_query.message.reply_text("Downloading the first audio... 🎵")
+        # Send downloading message
+        downloading_message = await callback_query.message.reply_text("Downloading the first audio... 🎵")
 
-    # Download the first audio
-    audio_id = callback_query.message.reply_to_message.id
-    first_audio_path = await client.download_media(
-        callback_query.message.reply_to_message,
-        file_name=os.path.join(DOWNLOAD_DIR, f"audio1_{audio_id}.mp3"),
-        progress=progress_bar,
-        progress_args=("Downloading first audio 🎵", callback_query.message)
-    )
+        # Download the first audio
+        audio_id = callback_query.message.reply_to_message.id
+        first_audio_path = await client.download_media(
+            callback_query.message.reply_to_message,
+            file_name=os.path.join(DOWNLOAD_DIR, f"audio1_{audio_id}.mp3"),
+            progress=progress_bar,
+            progress_args=("Downloading first audio 🎵", callback_query.message)
+        )
 
-    # Store the path of the first audio
-    audio_storage[chat_id] = {
-        "first_audio": first_audio_path,
-        "user_id": user_id
-    }
+        # Store the path of the first audio
+        audio_storage[chat_id] = {
+            "first_audio": first_audio_path,
+            "user_id": user_id
+        }
 
-    # Notify that the first audio has been downloaded
-    await downloading_message.edit_text("First audio downloaded. Please send the second audio file.")
-
+        # Notify that the first audio has been downloaded
+        await downloading_message.edit_text("First audio downloaded. Please send the second audio file.")
+    else:
+        await callback_query.message.reply_text("Please reply to an audio file or document with the audio+audio button.")
+        
 @app.on_message(filters.audio | filters.document)
 async def process_audio(client: Client, message: Message):
     chat_id = message.chat.id
