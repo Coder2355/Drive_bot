@@ -1,7 +1,7 @@
 import os
 import asyncio
 from pyrogram import Client, filters
-from pyrogram.types import Message, InlineKeyboardButton, InlineKeyboardMarkup
+from pyrogram.types import Message, InlineKeyboardMarkup, InlineKeyboardButton
 import ffmpeg
 from hachoir.metadata import extractMetadata
 from hachoir.parser import createParser
@@ -13,56 +13,56 @@ app = Client("audio_merger_bot", api_id=API_ID, api_hash=API_HASH, bot_token=BOT
 if not os.path.exists(DOWNLOAD_DIR):
     os.makedirs(DOWNLOAD_DIR)
 
+# Dictionary to store user status for audio merging
+merger = {}
+
 # Store the first audio file's message details
 audio_storage = {}
 
-# Store users who have clicked the audio+audio button
-merger = {}
-
 @app.on_message(filters.audio | filters.document)
-async def handle_audio(client: Client, message: Message):
-    # Check if the user is in the merger dictionary
-    if message.from_user.id in merger:
-        # Start merging process
-        await process_second_audio(client, message)
-    else:
-        # Display the inline button for audio+audio
-        await message.reply_text(
-            "Click the button to merge this audio with another one.",
-            reply_markup=InlineKeyboardMarkup([
-                [InlineKeyboardButton("audio+audio", callback_data="merge_audio")]
-            ])
-        )
+async def audio_handler(client: Client, message: Message):
+    # Create the inline keyboard with the audio+audio button
+    keyboard = InlineKeyboardMarkup(
+        [[InlineKeyboardButton("audio+audio", callback_data="merge_audio")]]
+    )
+    await message.reply_text("Select an option:", reply_markup=keyboard)
 
 @app.on_callback_query(filters.regex("merge_audio"))
-async def on_merge_audio_click(client: Client, callback_query):
+async def on_audio_plus_audio_button(client: Client, callback_query):
     user_id = callback_query.from_user.id
+    chat_id = callback_query.message.chat.id
 
-    # Store the user_id in the merger dictionary
-    merger[user_id] = True
+    # Store the user ID in the merger dictionary
+    merger[chat_id] = user_id
 
-    # Acknowledge the button click
-    await callback_query.answer("Now send the second audio file to merge with this one.")
+    # Send downloading message
+    downloading_message = await callback_query.message.reply_text("Downloading the first audio... 🎵")
 
-    # Store the first audio file
-    audio_id = callback_query.message.id
+    # Download the first audio
+    audio_id = callback_query.message.reply_to_message.id
     first_audio_path = await client.download_media(
-        callback_query.message,
+        callback_query.message.reply_to_message,
         file_name=os.path.join(DOWNLOAD_DIR, f"audio1_{audio_id}.mp3"),
         progress=progress_bar,
         progress_args=("Downloading first audio 🎵", callback_query.message)
     )
 
-    # Store the path of the first audio and the user_id
-    audio_storage[user_id] = {
+    # Store the path of the first audio
+    audio_storage[chat_id] = {
         "first_audio": first_audio_path,
         "user_id": user_id
     }
 
+    # Notify that the first audio has been downloaded
+    await downloading_message.edit_text("First audio downloaded. Please send the second audio file.")
+
 @app.on_message(filters.audio | filters.document)
-async def process_second_audio(client: Client, message: Message):
+async def process_audio(client: Client, message: Message):
+    chat_id = message.chat.id
     user_id = message.from_user.id
-    if user_id in merger and user_id in audio_storage:
+
+    # Check if user is in the merger dictionary
+    if chat_id in merger and merger[chat_id] == user_id:
         if message.audio or message.document:
             # Send downloading message
             downloading_message = await message.reply_text("Downloading the second audio... 🎵")
@@ -79,10 +79,10 @@ async def process_second_audio(client: Client, message: Message):
             # Notify that the second audio has been downloaded
             await downloading_message.edit_text("Second audio downloaded. Merging the audios... 🎵")
 
-            first_audio_path = audio_storage[user_id]["first_audio"]
+            first_audio_path = audio_storage[chat_id]["first_audio"]
 
             # Merge the two audio files using FFmpeg
-            merged_audio_path = os.path.join(DOWNLOAD_DIR, f"merged_{user_id}.mp3")
+            merged_audio_path = os.path.join(DOWNLOAD_DIR, f"merged_{chat_id}.mp3")
             (
                 ffmpeg
                 .concat(ffmpeg.input(first_audio_path), ffmpeg.input(second_audio_path), v=0, a=1)
@@ -98,7 +98,7 @@ async def process_second_audio(client: Client, message: Message):
 
             # Send the merged audio file with metadata
             await client.send_audio(
-                chat_id=message.chat.id,
+                chat_id=chat_id,
                 audio=merged_audio_path,
                 caption=f"Here's your merged audio! 🎵\n\nTitle: {title}\nArtist: {artist}\nDuration: {duration} seconds",
                 thumb=thumb,
@@ -114,16 +114,17 @@ async def process_second_audio(client: Client, message: Message):
             os.remove(first_audio_path)
             os.remove(second_audio_path)
             os.remove(merged_audio_path)
-            del audio_storage[user_id]
-            del merger[user_id]  # Remove the user from the merger dictionary
+            del audio_storage[chat_id]
+            del merger[chat_id]
         else:
             await message.reply_text("Please send a valid audio file or document.")
     else:
-        await message.reply_text("No merge process is active. Please start a new one.")
+        # If the user is not in the merger dictionary, process normally or start a new merge
+        await message.reply_text("No merge process is active. Please start a new one with the audio+audio button.")
 
 @app.on_message(filters.command("start"))
 async def start(client: Client, message: Message):
-    await message.reply_text("Hello! Send an audio file to start the merging process or use the audio+audio button to merge two audio files.")
+    await message.reply_text("Hello! Send an audio file or document, then click the audio+audio button to start the merging process.")
 
 # Progress bar function
 async def progress_bar(current, total, message, description):
