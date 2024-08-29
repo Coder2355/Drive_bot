@@ -10,6 +10,9 @@ from config import API_ID, API_HASH, BOT_TOKEN
 # Initialize the bot
 app = Client("audio_converter_bot", api_id=API_ID, api_hash=API_HASH, bot_token=BOT_TOKEN)
 
+# Dictionary to store user data
+user_data = {}
+
 # Inline keyboard buttons for audio formats
 audio_formats = InlineKeyboardMarkup([
     [InlineKeyboardButton("AC3", callback_data="ac3"), InlineKeyboardButton("MP3", callback_data="mp3")],
@@ -61,28 +64,25 @@ async def convert_audio(client, message):
         await message.reply_text("Please reply to an audio file or document with the /convert_audio command.")
         return
 
-    # Download the audio file with progress
     download_message = await message.reply_text("Downloading...")
     file = await message.reply_to_message.download(progress=progress, progress_args=(download_message, "Downloading"))
 
-    # Extract metadata
     title, artist, duration, size = extract_audio_metadata(file)
     
-    # Add metadata info to the message
     metadata_info = f"Title: {title or 'Unknown'}\nArtist: {artist or 'Unknown'}\nDuration: {duration // 60}:{duration % 60:02d}\nSize: {size / (1024 * 1024):.2f} MB"
     await download_message.edit_text(
         f"{metadata_info}\n\nPlease choose the format you want to convert to:", 
         reply_markup=audio_formats
     )
 
-    # Store the file path in the user's session for further processing
-    app.set_data(message.from_user.id, {'file_path': file})
+    # Store the file path in the user_data dictionary
+    user_data[message.from_user.id] = {'file_path': file}
 
 # Handle the callback queries from the inline keyboard
 @app.on_callback_query()
 async def handle_callback(client, callback_query):
-    user_data = app.get_data(callback_query.from_user.id)
-    file_path = user_data.get('file_path')
+    user_id = callback_query.from_user.id
+    file_path = user_data.get(user_id, {}).get('file_path')
     
     if not file_path:
         await callback_query.message.edit_text("Error: No file found. Please reply to an audio file first.")
@@ -93,6 +93,7 @@ async def handle_callback(client, callback_query):
     if format_selected == "cancel":
         await callback_query.message.edit_text("Conversion canceled.")
         os.remove(file_path)
+        user_data.pop(user_id, None)  # Remove user data
         return
 
     new_file_path = f"{os.path.splitext(file_path)[0]}.{format_selected}"
@@ -117,6 +118,7 @@ async def handle_callback(client, callback_query):
     except Exception as e:
         await callback_query.message.edit_text(f"Error during conversion: {str(e)}")
         os.remove(file_path)
+        user_data.pop(user_id, None)  # Remove user data
 
 if __name__ == "__main__":
     app.run()
