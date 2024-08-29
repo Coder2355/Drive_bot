@@ -8,7 +8,6 @@ from hachoir.metadata import extractMetadata
 from hachoir.parser import createParser
 from config import API_ID, API_HASH, BOT_TOKEN
 
-
 # Create a Pyrogram Client
 app = Client("audio_compressor_bot", api_id=API_ID, api_hash=API_HASH, bot_token=BOT_TOKEN)
 
@@ -30,8 +29,11 @@ async def progress(current, total, message, start_time):
 # Function to compress audio using FFmpeg
 async def compress_audio(input_file: str, output_file: str):
     try:
+        # Change the output file extension to .ogg for Opus format
+        output_file = os.path.splitext(output_file)[0] + ".ogg"
+        
         process = await asyncio.create_subprocess_exec(
-            'ffmpeg', '-i', input_file, '-c:a', 'opus', '-b:a', '34k', '-strict', '-2', '-y', output_file,
+            'ffmpeg', '-i', input_file, '-c:a', 'libopus', '-b:a', '34k', '-y', output_file,
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE
         )
@@ -41,7 +43,7 @@ async def compress_audio(input_file: str, output_file: str):
             print(f"FFmpeg error: {stderr.decode().strip()}")
             return False
 
-        return True
+        return output_file  # Return the new output file path
     except Exception as e:
         print(f"Error during compression: {e}")
         return False
@@ -86,15 +88,15 @@ async def compress_audio_command(client: Client, message: Message):
         print(f"Title: {title}, Artist: {artist}, Duration: {duration} seconds, Size: {file_size} bytes")
         
         # Define the output file path
-        output_file = f"compressed_{os.path.basename(file_path)}.aac"
+        output_file = f"compressed_{os.path.basename(file_path)}"
         
         # Inform the user that compression is starting
         await status_message.edit("Compressing audio file...")
         
         # Compress the audio file
-        compression_successful = await compress_audio(file_path, output_file)
+        compressed_file = await compress_audio(file_path, output_file)
         
-        if not compression_successful or os.path.getsize(output_file) == 0:
+        if not compressed_file or os.path.getsize(compressed_file) == 0:
             await status_message.edit("Compression failed. Please try again.")
             return
 
@@ -104,7 +106,7 @@ async def compress_audio_command(client: Client, message: Message):
         # Upload the compressed audio file with progress
         start_time = time()
         await message.reply_document(
-            output_file, 
+            compressed_file, 
             caption=f"**Title:** {title}\n**Artist:** {artist}\n**Duration:** {duration} seconds\n**Size:** {file_size / (1024 * 1024):.2f} MB",
             progress=progress, 
             progress_args=(status_message, start_time)
@@ -112,7 +114,7 @@ async def compress_audio_command(client: Client, message: Message):
         
         # Clean up temporary files
         os.remove(file_path)
-        os.remove(output_file)
+        os.remove(compressed_file)
         
         # Inform the user that the process is complete
         await status_message.edit("Audio compression complete.")
