@@ -81,17 +81,17 @@ async def compress_audio_command(client: Client, message: Message):
         )
         
         # Store the downloaded file path associated with the message ID
-        downloaded_files[message.message_id] = file_path
+        downloaded_files[message.id] = file_path
 
         # Ask the user for the output format using inline keyboard buttons
         buttons = [
-            [InlineKeyboardButton("MP3", callback_data=f"compress_mp3_{message.message_id}")],
-            [InlineKeyboardButton("AAC", callback_data=f"compress_aac_{message.message_id}")],
-            [InlineKeyboardButton("Opus", callback_data=f"compress_opus_{message.message_id}")],
-            [InlineKeyboardButton("OGG", callback_data=f"compress_ogg_{message.message_id}")],
-            [InlineKeyboardButton("WAV", callback_data=f"compress_wav_{message.message_id}")],
-            [InlineKeyboardButton("AC3", callback_data=f"compress_ac3_{message.message_id}")],
-            [InlineKeyboardButton("Cancel", callback_data=f"compress_cancel_{message.message_id}")]
+            [InlineKeyboardButton("MP3", callback_data=f"compress_mp3_{message.id}")],
+            [InlineKeyboardButton("AAC", callback_data=f"compress_aac_{message.id}")],
+            [InlineKeyboardButton("Opus", callback_data=f"compress_opus_{message.id}")],
+            [InlineKeyboardButton("OGG", callback_data=f"compress_ogg_{message.id}")],
+            [InlineKeyboardButton("WAV", callback_data=f"compress_wav_{message.id}")],
+            [InlineKeyboardButton("AC3", callback_data=f"compress_ac3_{message.id}")],
+            [InlineKeyboardButton("Cancel", callback_data=f"compress_cancel_{message.id}")]
         ]
 
         await status_message.edit(
@@ -127,8 +127,8 @@ async def format_selection(client: Client, callback_query):
         "mp3": ("libmp3lame", "128k", ".mp3"),
         "aac": ("aac", "34k", ".aac"),
         "opus": ("libopus", "34k", ".opus"),
-        "ogg": ("libvorbis", "34k", ".ogg"),
-        "wav": ("pcm_s16le", "34k", ".wav"),
+        "ogg": ("libvorbis", "128k", ".ogg"),
+        "wav": ("pcm_s16le", "128k", ".wav"),
         "ac3": ("ac3", "192k", ".ac3")
     }
 
