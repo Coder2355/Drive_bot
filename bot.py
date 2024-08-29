@@ -107,7 +107,7 @@ async def handle_callback(client, callback_query):
         await asyncio.to_thread(ffmpeg.input(file_path).output(new_file_path).run)
 
         upload_message = await callback_query.message.edit_text("Uploading...")
-        await client.document(
+        await client.send_document(
             chat_id=callback_query.message.chat.id,
             document=new_file_path,
             caption=f"Here is your file converted to {format_selected.upper()}",
