@@ -6,7 +6,7 @@ import ffmpeg
 from config import API_ID, API_HASH, BOT_TOKEN
 
 # Bot setup
-app = Client("audio_merger_bot", api_id=YOUR_API_ID, api_hash=YOUR_API_HASH, bot_token=YOUR_BOT_TOKEN)
+app = Client("audio_merger_bot", api_id=API_ID, api_hash=API_HASH, bot_token=BOT_TOKEN)
 
 # Dictionary to store user state
 user_state = {}
