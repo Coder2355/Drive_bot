@@ -1,104 +1,93 @@
+from pyrogram import Client, filters
+from pyrogram.types import InlineKeyboardMarkup, InlineKeyboardButton
+from progress_for_pyrogram import Progress
 import os
 import asyncio
-from pyrogram import Client, filters
-from pyrogram.types import InlineKeyboardMarkup, InlineKeyboardButton, Message
 import ffmpeg
+import time
 from config import API_ID, API_HASH, BOT_TOKEN
 
-# Initialize the Pyrogram client
-app = Client("audio_merger_bot", api_id=API_ID, api_hash=API_HASH, bot_token=BOT_TOKEN)
 
-# Dictionary to keep track of users who are merging audio
-merger = {}
+# Initialize the bot with your credentials
+app = Client("audio_converter_bot", api_id="API_ID", api_hash="API_HASH", bot_token="BOT_TOKEN")
 
-# Function to download files
-async def download_file(message, file_name):
-    file_path = await message.download(file_name)
-    return file_path
+# Function to convert audio
+async def convert_audio(file_path, output_format):
+    output_file = f"{os.path.splitext(file_path)[0]}.{output_format}"
+    await asyncio.create_subprocess_shell(
+        f"ffmpeg -i {file_path} {output_file}",
+        stdout=asyncio.subprocess.PIPE,
+        stderr=asyncio.subprocess.PIPE,
+    )
+    return output_file
 
-# Function to merge two audio files using FFmpeg
-async def merge_audio_files(file1, file2, output_file):
+# Progress function
+async def progress_for_pyrogram(current, total, message, action):
     try:
-        # Use the concat filter to concatenate the audio files
-        (
-            ffmpeg
-            .concat(
-                ffmpeg.input(file1, format='mp3'),
-                ffmpeg.input(file2, format='mp3'),
-                v=0,
-                a=1
-            )
-            .output(output_file)
-            .run(overwrite_output=True)
-        )
-    except ffmpeg.Error as e:
-        # Check if stderr is available and print it, else print a generic error message
-        stderr = e.stderr.decode('utf8') if e.stderr else 'No stderr output available'
-        print(f"FFmpeg error: {stderr}")
+        percentage = current * 100 / total
+        progress = f"[{'█' * int(percentage / 5)}{'░' * (20 - int(percentage / 5))}]"
+        await message.edit_text(f"{action}\n{progress} {percentage:.1f}%")
+    except Exception as e:
+        print(e)
 
-# Command handler for /merge_audio
-@app.on_message(filters.command("merge_audio") & filters.reply)
-async def merge_audio_command(client, message):
-    # Check if the replied message is an audio file or audio document
-    if not (message.reply_to_message.audio or message.reply_to_message.document):
-        await message.reply_text("Please reply to an audio file or audio document.")
+# Command handler for /convert_audio
+@app.on_message(filters.command("convert_audio") & (filters.reply | filters.audio | filters.document))
+async def convert_audio_command(client, message):
+    sent_msg = await message.reply_text("Downloading...")
+
+    # Download the replied audio file with progress tracking
+    file = await client.download_media(
+        message.reply_to_message.audio or message.reply_to_message.document,
+        progress=progress_for_pyrogram,
+        progress_args=(sent_msg, "Downloading...")
+    )
+    
+    # Create inline keyboard for format selection
+    keyboard = InlineKeyboardMarkup([
+        [InlineKeyboardButton("MP3", callback_data="mp3"),
+         InlineKeyboardButton("AAC", callback_data="aac")],
+        [InlineKeyboardButton("Opus", callback_data="opus"),
+         InlineKeyboardButton("OGG", callback_data="ogg")],
+        [InlineKeyboardButton("WAV", callback_data="wav"),
+         InlineKeyboardButton("AC3", callback_data="ac3")],
+        [InlineKeyboardButton("M4A", callback_data="m4a"),
+         InlineKeyboardButton("Cancel", callback_data="cancel")]
+    ])
+    
+    # Send message with inline keyboard
+    await sent_msg.edit_text("Choose the output format:", reply_markup=keyboard)
+
+    # Store the file path in the user's state (using message ID as a key)
+    client.set_parse_mode('file', file)
+
+# Callback query handler for format selection
+@app.on_callback_query()
+async def callback_query_handler(client, callback_query):
+    file = client.get_parse_mode('file')
+
+    if callback_query.data == "cancel":
+        await callback_query.message.edit_text("Conversion canceled.")
+        os.remove(file)
         return
 
-    # Show inline keyboard to start the merge process
-    buttons = [
-        [InlineKeyboardButton("audio+audio", callback_data="start_merge")]
-    ]
-    await message.reply_text("Press the button to start merging the audio files:", reply_markup=InlineKeyboardMarkup(buttons))
-    
-    # Store the user's ID and the first audio file
-    merger[message.from_user.id] = {"first_audio": message.reply_to_message}
+    output_format = callback_query.data
+    await callback_query.message.edit_text(f"Converting to {output_format}...")
 
-# Callback query handler for the inline keyboard
-@app.on_callback_query(filters.regex("start_merge"))
-async def on_start_merge(client, callback_query):
-    user_id = callback_query.from_user.id
+    # Convert the audio file
+    output_file = await convert_audio(file, output_format)
     
-    if user_id not in merger:
-        await callback_query.message.reply_text("Please start the process by replying to an audio file with /merge_audio.")
-        return
-    
-    await callback_query.message.edit_text("Please send the second audio file.")
+    # Upload the converted file with progress tracking
+    sent_msg = await callback_query.message.edit_text("Uploading...")
+    await client.send_audio(
+        chat_id=callback_query.message.chat.id, 
+        audio=output_file,
+        progress=progress_for_pyrogram,
+        progress_args=(sent_msg, "Uploading...")
+    )
 
-# Handler for receiving the second audio file
-@app.on_message(filters.audio | filters.document)
-async def receive_second_audio(client, message):
-    user_id = message.from_user.id
-    
-    # Check if the user is in the merging process
-    if user_id not in merger:
-        return
-    
-    # Get the first audio message and download both audio files
-    first_audio = merger[user_id]["first_audio"]
-    first_file_name = f"{user_id}_first_audio.mp3"
-    second_file_name = f"{user_id}_second_audio.mp3"
-    output_file_name = f"{user_id}_merged_audio.mp3"
-    
-    await message.reply_text("Downloading audio files...")
+    # Clean up
+    os.remove(file)
+    os.remove(output_file)
 
-    first_file_path = await download_file(first_audio, first_file_name)
-    second_file_path = await download_file(message, second_file_name)
-
-    await message.reply_text("Merging audio files...")
-
-    # Merge the audio files
-    await merge_audio_files(first_file_path, second_file_path, output_file_name)
-    
-    # Send the merged audio file
-    await message.reply_audio(audio=output_file_name, caption="Here is your merged audio file!")
-
-    # Clean up the temporary files
-    os.remove(first_file_path)
-    os.remove(second_file_path)
-    os.remove(output_file_name)
-    
-    # Remove the user from the merger dictionary
-    del merger[user_id]
-
-# Start the bot
+# Run the bot
 app.run()
