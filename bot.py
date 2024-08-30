@@ -17,14 +17,22 @@ async def download_file(message, file_name):
     return file_path
 
 # Function to merge two audio files using FFmpeg
+
 async def merge_audio_files(file1, file2, output_file):
     try:
-        input1 = ffmpeg.input(file1)
-        input2 = ffmpeg.input(file2)
-
+        # Create the FFmpeg command to concatenate the audio files
+        ffmpeg.input(file1, format='mp3').output('pipe:1').run(capture_stdout=True)
+        ffmpeg.input(file2, format='mp3').output('pipe:1').run(capture_stdout=True)
+        
+        # Use the concat filter to concatenate the audio files
         (
             ffmpeg
-            .filter([input1, input2], 'amix', inputs=2)
+            .concat(
+                ffmpeg.input(file1),
+                ffmpeg.input(file2),
+                v=0,
+                a=1
+            )
             .output(output_file)
             .run(overwrite_output=True)
         )
