@@ -1,6 +1,5 @@
 from pyrogram import Client, filters
 from pyrogram.types import InlineKeyboardMarkup, InlineKeyboardButton
-from progress_for_pyrogram import Progress
 import os
 import asyncio
 import ffmpeg
