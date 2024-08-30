@@ -4,7 +4,7 @@ from pyrogram.types import InlineKeyboardMarkup, InlineKeyboardButton
 audio_feature_buttons = InlineKeyboardMarkup(
     [        
         [InlineKeyboardButton("Audio Trimmer✂️", callback_data="handle_trim_audio"),
-         InlineKeyboardButton("Audio+Audio🎵", callback_data="set_merge_audio")],
+         InlineKeyboardButton("Audio+Audio🎵", callback_data="start_merge")],
         [InlineKeyboardButton("Audio Compress 🗜️", callback_data="compress_audio")],
         [InlineKeyboardButton("Cancel❌", callback_data="close")]
     ]
