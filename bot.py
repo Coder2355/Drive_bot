@@ -17,7 +17,6 @@ async def download_file(message, file_name):
     return file_path
 
 # Function to merge two audio files using FFmpeg
-
 async def merge_audio_files(file1, file2, output_file):
     try:
         # Use the concat filter to concatenate the audio files
