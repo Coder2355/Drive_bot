@@ -8,7 +8,7 @@ from config import API_ID, API_HASH, BOT_TOKEN
 
 
 # Initialize the bot with your credentials
-app = Client("audio_converter_bot", api_id="API_ID", api_hash="API_HASH", bot_token="BOT_TOKEN")
+app = Client("audio_converter_bot", api_id=API_ID, api_hash=API_HASH, bot_token=BOT_TOKEN)
 
 # Function to convert audio
 async def convert_audio(file_path, output_format):
