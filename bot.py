@@ -36,8 +36,7 @@ async def start_merge(client, callback_query):
     # Check if the user has started the merging process
     if user_id in user_state and user_state[user_id]["first_audio"]:
         await callback_query.message.reply_text(
-            "Send the second audio file to merge it with the first one.",
-            reply_markup=ForceReply()
+            "Send the second audio file to merge it with the first one."
         )
     else:
         await callback_query.message.reply_text("Please start the merging process by replying to an audio file with /merge_audio.")
