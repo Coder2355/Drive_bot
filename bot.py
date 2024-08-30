@@ -18,7 +18,14 @@ async def download_file(message, file_name):
 
 # Function to merge two audio files using FFmpeg
 async def merge_audio_files(file1, file2, output_file):
-    ffmpeg.input(file1).output(file2, output_file, shortest=None).run(overwrite_output=True)
+    (
+        ffmpeg
+        .input(file1)
+        .input(file2)
+        .filter('amix', inputs=2)
+        .output(output_file)
+        .run(overwrite_output=True)
+    )
 
 # Command handler for /merge_audio
 @app.on_message(filters.command("merge_audio") & filters.reply)
