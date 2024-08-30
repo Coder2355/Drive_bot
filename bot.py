@@ -19,11 +19,12 @@ async def download_file(message, file_name):
 # Function to merge two audio files using FFmpeg
 async def merge_audio_files(file1, file2, output_file):
     try:
+        input1 = ffmpeg.input(file1)
+        input2 = ffmpeg.input(file2)
+
         (
             ffmpeg
-            .input(file1)
-            .input(file2)
-            .filter('amix', inputs=2)
+            .filter([input1, input2], 'amix', inputs=2)
             .output(output_file)
             .run(overwrite_output=True)
         )
