@@ -103,6 +103,10 @@ async def select_stream(client: Client, callback_query):
         user_session["streams_to_remove"].append(stream_id)
         new_text = callback_query.message.text.replace(stream_id, f"✅ {stream_id}")
 
+    # Only edit the message if there's a change
+    if callback_query.message.text != new_text:
+        await callback_query.message.edit_text(new_text, reply_markup=callback_query.message.reply_markup)
+    
     await callback_query.answer()
 
     # Update the message with the selected streams
