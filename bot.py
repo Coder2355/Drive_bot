@@ -98,13 +98,11 @@ async def process_video(client, message, user_id):
     status_message = stream_selection["status_message"]
     output_file = "output_" + os.path.basename(file_path)
 
-    # Build FFmpeg input and output based on stream selection
-    input_spec = ffmpeg.input(file_path)
-    output_spec = input_spec
-
+    # Create a list of "-map" arguments
+    map_args = []
     for index, keep in enumerate(selected_streams):
         if not keep:
-            output_spec = output_spec.filter_("select_streams", index=index, nb_streams=1)
+            map_args.extend(["-map", f"-0:{index}"])
 
     # Run FFmpeg command
     process = await asyncio.create_subprocess_exec(
@@ -114,7 +112,7 @@ async def process_video(client, message, user_id):
         "-c", "copy",
         "-map", "-0:d",
         "-map", "-0:s",
-        *["-map", f"-0:{index}" for index, keep in enumerate(selected_streams) if not keep],
+        *map_args,
         output_file
     )
 
