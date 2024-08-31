@@ -6,9 +6,11 @@ import ffmpeg
 import time
 from config import API_ID, API_HASH, BOT_TOKEN
 
-
 # Initialize the bot with your credentials
 app = Client("audio_converter_bot", api_id=API_ID, api_hash=API_HASH, bot_token=BOT_TOKEN)
+
+# Dictionary to store file paths
+user_files = {}
 
 # Function to convert audio
 async def convert_audio(file_path, output_format):
@@ -41,6 +43,9 @@ async def convert_audio_command(client, message):
         progress_args=(sent_msg, "Downloading...")
     )
     
+    # Store the file path in the user's state (using message ID as a key)
+    user_files[message.from_user.id] = file
+    
     # Create inline keyboard for format selection
     keyboard = InlineKeyboardMarkup([
         [InlineKeyboardButton("MP3", callback_data="mp3"),
@@ -56,17 +61,20 @@ async def convert_audio_command(client, message):
     # Send message with inline keyboard
     await sent_msg.edit_text("Choose the output format:", reply_markup=keyboard)
 
-    # Store the file path in the user's state (using message ID as a key)
-    client.set_parse_mode('file', file)
-
 # Callback query handler for format selection
 @app.on_callback_query()
 async def callback_query_handler(client, callback_query):
-    file = client.get_parse_mode('file')
+    user_id = callback_query.from_user.id
+    file = user_files.get(user_id)
+
+    if not file:
+        await callback_query.message.edit_text("No file found to convert.")
+        return
 
     if callback_query.data == "cancel":
         await callback_query.message.edit_text("Conversion canceled.")
         os.remove(file)
+        user_files.pop(user_id, None)
         return
 
     output_format = callback_query.data
@@ -87,6 +95,7 @@ async def callback_query_handler(client, callback_query):
     # Clean up
     os.remove(file)
     os.remove(output_file)
+    user_files.pop(user_id, None)
 
 # Run the bot
 app.run()
