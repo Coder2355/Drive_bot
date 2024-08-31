@@ -7,11 +7,15 @@ from config import API_ID, API_HASH, BOT_TOKEN
 
 app = Client("stream_remover_bot", api_id=API_ID, api_hash=API_HASH, bot_token=BOT_TOKEN)
 
+
 # Directory to save downloaded files
 DOWNLOAD_DIR = "downloads"
 
 # Ensure download directory exists
 os.makedirs(DOWNLOAD_DIR, exist_ok=True)
+
+# Dictionary to store user data
+user_data = {}
 
 
 def list_streams(file_path):
@@ -69,8 +73,8 @@ async def stream_remover(client: Client, message: Message):
         reply_markup=InlineKeyboardMarkup(buttons),
     )
 
-    # Store the stream data in the message object
-    message.user_data = {
+    # Store the stream data in the user_data dictionary
+    user_data[message.chat.id] = {
         "file_path": file_path,
         "streams": streams,
         "streams_to_remove": [],
@@ -80,44 +84,59 @@ async def stream_remover(client: Client, message: Message):
 
 @app.on_callback_query(filters.regex(r"^stream_"))
 async def select_stream(client: Client, callback_query):
-    message = callback_query.message
+    chat_id = callback_query.message.chat.id
     data = callback_query.data
     stream_id = data.split("_")[1]
 
-    user_data = message.reply_to_message.user_data
+    # Retrieve user data from the dictionary
+    if chat_id not in user_data:
+        await callback_query.answer("Something went wrong. Please try again.")
+        return
+
+    user_session = user_data[chat_id]
 
     # Toggle stream selection
-    if stream_id in user_data["streams_to_remove"]:
-        user_data["streams_to_remove"].remove(stream_id)
+    if stream_id in user_session["streams_to_remove"]:
+        user_session["streams_to_remove"].remove(stream_id)
         new_text = callback_query.message.text.replace(f"✅ {stream_id}", stream_id)
     else:
-        user_data["streams_to_remove"].append(stream_id)
+        user_session["streams_to_remove"].append(stream_id)
         new_text = callback_query.message.text.replace(stream_id, f"✅ {stream_id}")
 
     await callback_query.answer()
 
     # Update the message with the selected streams
-    await message.edit_text(new_text, reply_markup=callback_query.message.reply_markup)
+    await callback_query.message.edit_text(new_text, reply_markup=callback_query.message.reply_markup)
 
 
 @app.on_message(filters.command("confirm_remove") & filters.reply)
 async def confirm_remove(client: Client, message: Message):
-    user_data = message.reply_to_message.user_data
+    chat_id = message.chat.id
 
-    if not user_data["streams_to_remove"]:
+    # Retrieve user data from the dictionary
+    if chat_id not in user_data:
+        await message.reply("Something went wrong. Please try again.")
+        return
+
+    user_session = user_data[chat_id]
+
+    if not user_session["streams_to_remove"]:
         await message.reply("No streams selected for removal.")
         return
 
-    await user_data["msg_reply"].edit("Removing selected streams...")
-    output_file = remove_streams(user_data["file_path"], user_data["streams_to_remove"])
+    await user_session["msg_reply"].edit("Removing selected streams...")
+    output_file = remove_streams(user_session["file_path"], user_session["streams_to_remove"])
     
-    await user_data["msg_reply"].edit("Streams removed successfully. Uploading the file...")
+    await user_session["msg_reply"].edit("Streams removed successfully. Uploading the file...")
     await message.reply_document(output_file)
-    await user_data["msg_reply"].delete()
+    await user_session["msg_reply"].delete()
 
     # Cleanup
-    os.remove(user_data["file_path"])
+    os.remove(user_session["file_path"])
     os.remove(output_file)
+
+    # Clear user data
+    del user_data[chat_id]
 
 
 app.run()
