@@ -1,146 +1,137 @@
 import os
 import asyncio
+import ffmpeg
 from pyrogram import Client, filters
-from pyrogram.types import InlineKeyboardMarkup, InlineKeyboardButton, Message
-import subprocess
+from pyrogram.types import InlineKeyboardMarkup, InlineKeyboardButton
 from config import API_ID, API_HASH, BOT_TOKEN
 
 app = Client("stream_remover_bot", api_id=API_ID, api_hash=API_HASH, bot_token=BOT_TOKEN)
 
-
-# Directory to save downloaded files
-DOWNLOAD_DIR = "downloads"
-
-# Ensure download directory exists
-os.makedirs(DOWNLOAD_DIR, exist_ok=True)
-
-# Dictionary to store user data
-user_data = {}
-
-
-def list_streams(file_path):
-    """Function to list streams in the video file."""
-    result = subprocess.run(
-        ["ffmpeg", "-i", file_path], stderr=subprocess.PIPE, universal_newlines=True
-    )
-    output = result.stderr
-    streams = []
-    for line in output.splitlines():
-        if "Stream #" in line:
-            stream_info = line.split("Stream #")[1]
-            stream_id = stream_info.split(":")[0]
-            stream_description = stream_info.split(": ")[1]
-            streams.append({"id": stream_id, "description": stream_description})
-    return streams
-
-
-def remove_streams(file_path, streams_to_remove):
-    """Function to remove selected streams."""
-    cmd = ["ffmpeg", "-i", file_path]
-    
-    for stream in streams_to_remove:
-        cmd.extend(["-map", f"-0:{stream}"])
-    
-    output_file = f"{file_path.rsplit('.', 1)[0]}_no_streams.mkv"
-    cmd.extend(["-c", "copy", output_file])
-    
-    subprocess.run(cmd)
-    return output_file
-
+# Dictionary to store stream selection
+stream_selection = {}
 
 @app.on_message(filters.command("stream_remove") & filters.reply)
-async def stream_remover(client: Client, message: Message):
-    msg = message.reply_to_message
-    if not (msg.video or msg.document):
-        await message.reply("Please reply to a video or document file.")
-        return
+async def stream_remove(client, message):
+    # Send a message indicating download status
+    status_message = await message.reply("📥 Downloading video file...")
+    
+    # Download the video file
+    video_message = message.reply_to_message
+    file_path = await video_message.download()
 
-    msg_reply = await message.reply("Downloading the file...")
-    file_path = await msg.download(DOWNLOAD_DIR)
-    await msg_reply.edit("File downloaded. Analyzing streams...")
+    # Update the status message to indicate download completion
+    await status_message.edit_text("📥 Video downloaded successfully. Analyzing streams...")
 
-    streams = list_streams(file_path)
-    if not streams:
-        await msg_reply.edit("No streams found.")
-        return
+    # Retrieve streams info from the video using ffmpeg
+    streams = ffmpeg.probe(file_path)["streams"]
 
+    # Create inline buttons for each stream
     buttons = []
-    for stream in streams:
-        buttons.append([InlineKeyboardButton(f"{stream['description']}", callback_data=f"stream_{stream['id']}")])
+    for index, stream in enumerate(streams):
+        lang = stream.get("tags", {}).get("language", "unknown")
+        codec_type = stream["codec_type"]
+        button_text = f"{index + 1} {lang} {'🎵' if codec_type == 'audio' else '📜'}"
+        buttons.append([InlineKeyboardButton(button_text, callback_data=f"toggle_{index}")])
 
-    await msg_reply.edit(
-        "Select the streams to remove:",
-        reply_markup=InlineKeyboardMarkup(buttons),
+    buttons.append([InlineKeyboardButton("Reverse Selection", callback_data="reverse_selection")])
+    buttons.append([InlineKeyboardButton("Cancel", callback_data="cancel"), InlineKeyboardButton("Done", callback_data="done")])
+
+    # Send the buttons to the user
+    await status_message.edit_text(
+        "Okay, Now Select All The Streams You Want To Remove From Media. You Have 5 Minutes",
+        reply_markup=InlineKeyboardMarkup(buttons)
     )
 
-    # Store the stream data in the user_data dictionary
-    user_data[message.chat.id] = {
-        "file_path": file_path,
-        "streams": streams,
-        "streams_to_remove": [],
-        "msg_reply": msg_reply
-    }
+    # Store initial state
+    stream_selection[message.chat.id] = [False] * len(streams)
+    stream_selection["file_path"] = file_path
+    stream_selection["status_message"] = status_message
 
-
-@app.on_callback_query(filters.regex(r"^stream_"))
-async def select_stream(client: Client, callback_query):
-    chat_id = callback_query.message.chat.id
+@app.on_callback_query()
+async def callback_handler(client, callback_query):
+    user_id = callback_query.message.chat.id
     data = callback_query.data
-    stream_id = data.split("_")[1]
 
-    # Retrieve user data from the dictionary
-    if chat_id not in user_data:
-        await callback_query.answer("Something went wrong. Please try again.")
-        return
+    # Handling stream selection
+    if data.startswith("toggle_"):
+        index = int(data.split("_")[1])
+        stream_selection[user_id][index] = not stream_selection[user_id][index]
+        await update_buttons(callback_query)
 
-    user_session = user_data[chat_id]
+    # Handling reverse selection
+    elif data == "reverse_selection":
+        stream_selection[user_id] = [not selected for selected in stream_selection[user_id]]
+        await update_buttons(callback_query)
 
-    # Toggle stream selection
-    if stream_id in user_session["streams_to_remove"]:
-        user_session["streams_to_remove"].remove(stream_id)
-        new_text = callback_query.message.text.replace(f"✅ {stream_id}", stream_id)
-    else:
-        user_session["streams_to_remove"].append(stream_id)
-        new_text = callback_query.message.text.replace(stream_id, f"✅ {stream_id}")
+    # Handling cancellation
+    elif data == "cancel":
+        await callback_query.message.edit_text("Stream selection canceled.")
+        os.remove(stream_selection["file_path"])
+        del stream_selection[user_id]
 
-    # Only edit the message if there's a change
-    if callback_query.message.text != new_text:
-        await callback_query.message.edit_text(new_text, reply_markup=callback_query.message.reply_markup)
-    
-    await callback_query.answer()
+    # Handling completion
+    elif data == "done":
+        await callback_query.message.edit_text("⏳ Processing your video...")
+        await process_video(client, callback_query.message, user_id)
 
-    # Update the message with the selected streams
-    await callback_query.message.edit_text(new_text, reply_markup=callback_query.message.reply_markup)
+async def update_buttons(callback_query):
+    user_id = callback_query.message.chat.id
+    message = callback_query.message
+    streams = ffmpeg.probe(stream_selection["file_path"])["streams"]
+    buttons = []
 
+    for index, selected in enumerate(stream_selection[user_id]):
+        lang = streams[index].get("tags", {}).get("language", "unknown")
+        codec_type = streams[index]["codec_type"]
+        status = "✅" if selected else ""
+        button_text = f"{index + 1} {lang} {'🎵' if codec_type == 'audio' else '📜'} {status}"
+        buttons.append([InlineKeyboardButton(button_text, callback_data=f"toggle_{index}")])
 
-@app.on_message(filters.command("confirm_remove") & filters.reply)
-async def confirm_remove(client: Client, message: Message):
-    chat_id = message.chat.id
+    buttons.append([InlineKeyboardButton("Reverse Selection", callback_data="reverse_selection")])
+    buttons.append([InlineKeyboardButton("Cancel", callback_data="cancel"), InlineKeyboardButton("Done", callback_data="done")])
 
-    # Retrieve user data from the dictionary
-    if chat_id not in user_data:
-        await message.reply("Something went wrong. Please try again.")
-        return
+    await message.edit_reply_markup(reply_markup=InlineKeyboardMarkup(buttons))
 
-    user_session = user_data[chat_id]
+async def process_video(client, message, user_id):
+    selected_streams = stream_selection[user_id]
+    file_path = stream_selection["file_path"]
+    status_message = stream_selection["status_message"]
+    output_file = "output_" + os.path.basename(file_path)
 
-    if not user_session["streams_to_remove"]:
-        await message.reply("No streams selected for removal.")
-        return
+    # Build FFmpeg input and output based on stream selection
+    input_spec = ffmpeg.input(file_path)
+    output_spec = input_spec
 
-    await user_session["msg_reply"].edit("Removing selected streams...")
-    output_file = remove_streams(user_session["file_path"], user_session["streams_to_remove"])
-    
-    await user_session["msg_reply"].edit("Streams removed successfully. Uploading the file...")
+    for index, keep in enumerate(selected_streams):
+        if not keep:
+            output_spec = output_spec.filter_("select_streams", index=index, nb_streams=1)
+
+    # Run FFmpeg command
+    process = await asyncio.create_subprocess_exec(
+        "ffmpeg",
+        "-i", file_path,
+        "-map", "0",
+        "-c", "copy",
+        "-map", "-0:d",
+        "-map", "-0:s",
+        *["-map", f"-0:{index}" for index, keep in enumerate(selected_streams) if not keep],
+        output_file
+    )
+
+    await process.communicate()
+
+    # Update status to indicate upload
+    await status_message.edit_text("📤 Uploading the processed video...")
+
+    # Upload the processed video
     await message.reply_document(output_file)
-    await user_session["msg_reply"].delete()
 
     # Cleanup
-    os.remove(user_session["file_path"])
+    os.remove(file_path)
     os.remove(output_file)
+    del stream_selection[user_id]
 
-    # Clear user data
-    del user_data[chat_id]
-
+    # Update the status to indicate completion
+    await status_message.edit_text("✅ Processing and upload complete!")
 
 app.run()
