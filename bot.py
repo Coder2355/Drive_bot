@@ -1,151 +1,123 @@
-from pyrogram import Client, filters
-from pyrogram.types import InlineKeyboardMarkup, InlineKeyboardButton
 import os
-import re
-import subprocess 
 import asyncio
-import ffmpeg
-import time
+from pyrogram import Client, filters
+from pyrogram.types import InlineKeyboardMarkup, InlineKeyboardButton, Message
+import subprocess
 from config import API_ID, API_HASH, BOT_TOKEN
 
-# Initialize the bot with your credentials
-app = Client("audio_converter_bot", api_id=API_ID, api_hash=API_HASH, bot_token=BOT_TOKEN)
+app = Client("stream_remover_bot", api_id=API_ID, api_hash=API_HASH, bot_token=BOT_TOKEN)
 
-# Dictionary to store file paths
-user_files = {}
+# Directory to save downloaded files
+DOWNLOAD_DIR = "downloads"
+
+# Ensure download directory exists
+os.makedirs(DOWNLOAD_DIR, exist_ok=True)
 
 
-# Function to convert audio
-async def convert_audio(file_path, output_format):
-    output_file = f"{os.path.splitext(file_path)[0]}.{output_format}"
+def list_streams(file_path):
+    """Function to list streams in the video file."""
+    result = subprocess.run(
+        ["ffmpeg", "-i", file_path], stderr=subprocess.PIPE, universal_newlines=True
+    )
+    output = result.stderr
+    streams = []
+    for line in output.splitlines():
+        if "Stream #" in line:
+            stream_info = line.split("Stream #")[1]
+            stream_id = stream_info.split(":")[0]
+            stream_description = stream_info.split(": ")[1]
+            streams.append({"id": stream_id, "description": stream_description})
+    return streams
 
-    process = await asyncio.create_subprocess_shell(
-        f"ffmpeg -i {file_path} {output_file}",
-        stdout=asyncio.subprocess.PIPE,
-        stderr=asyncio.subprocess.PIPE,
+
+def remove_streams(file_path, streams_to_remove):
+    """Function to remove selected streams."""
+    cmd = ["ffmpeg", "-i", file_path]
+    
+    for stream in streams_to_remove:
+        cmd.extend(["-map", f"-0:{stream}"])
+    
+    output_file = f"{file_path.rsplit('.', 1)[0]}_no_streams.mkv"
+    cmd.extend(["-c", "copy", output_file])
+    
+    subprocess.run(cmd)
+    return output_file
+
+
+@app.on_message(filters.command("stream_remove") & filters.reply)
+async def stream_remover(client: Client, message: Message):
+    msg = message.reply_to_message
+    if not (msg.video or msg.document):
+        await message.reply("Please reply to a video or document file.")
+        return
+
+    msg_reply = await message.reply("Downloading the file...")
+    file_path = await msg.download(DOWNLOAD_DIR)
+    await msg_reply.edit("File downloaded. Analyzing streams...")
+
+    streams = list_streams(file_path)
+    if not streams:
+        await msg_reply.edit("No streams found.")
+        return
+
+    buttons = []
+    for stream in streams:
+        buttons.append([InlineKeyboardButton(f"{stream['description']}", callback_data=f"stream_{stream['id']}")])
+
+    await msg_reply.edit(
+        "Select the streams to remove:",
+        reply_markup=InlineKeyboardMarkup(buttons),
     )
 
-    stdout, stderr = await process.communicate()
+    # Store the stream data in the message object
+    message.user_data = {
+        "file_path": file_path,
+        "streams": streams,
+        "streams_to_remove": [],
+        "msg_reply": msg_reply
+    }
 
-    if process.returncode != 0:
-        print(f"FFmpeg error: {stderr.decode()}")
-        return None  # Return None to indicate failure
 
-    return output_file if os.path.exists(output_file) and os.path.getsize(output_file) > 0 else None
+@app.on_callback_query(filters.regex(r"^stream_"))
+async def select_stream(client: Client, callback_query):
+    message = callback_query.message
+    data = callback_query.data
+    stream_id = data.split("_")[1]
 
-# Progress function
-async def progress_for_pyrogram(current, total, message, action):
-    try:
-        percentage = current * 100 / total
-        progress = f"[{'█' * int(percentage / 5)}{'░' * (20 - int(percentage / 5))}]"
-        await message.edit_text(f"{action}\n{progress} {percentage:.1f}%")
-    except Exception as e:
-        print(e)
+    user_data = message.reply_to_message.user_data
 
-# Function to sanitize the file name
-def sanitize_filename(filename):
-    # Replace or remove problematic characters
-    sanitized_filename = re.sub(r'[^\x00-\x7F]+', '', filename)  # Remove non-ASCII characters
-    sanitized_filename = sanitized_filename.replace('\xa0', ' ')  # Replace non-breaking spaces with regular spaces
-    sanitized_filename = re.sub(r'\s+', ' ', sanitized_filename).strip()  # Normalize whitespace
-    return sanitized_filename
+    # Toggle stream selection
+    if stream_id in user_data["streams_to_remove"]:
+        user_data["streams_to_remove"].remove(stream_id)
+        new_text = callback_query.message.text.replace(f"✅ {stream_id}", stream_id)
+    else:
+        user_data["streams_to_remove"].append(stream_id)
+        new_text = callback_query.message.text.replace(stream_id, f"✅ {stream_id}")
 
-# Function to check if the file is already in the desired format
-def is_same_format(file_path, output_format):
-    return file_path.lower().endswith(f".{output_format.lower()}")
+    await callback_query.answer()
 
-# Function to check if the file exists and has a non-zero size
-def is_valid_file(file_path):
-    return os.path.exists(file_path) and os.path.getsize(file_path) > 0
+    # Update the message with the selected streams
+    await message.edit_text(new_text, reply_markup=callback_query.message.reply_markup)
 
-# Command handler for /convert_audio
-@app.on_message(filters.command("convert_audio") & (filters.reply | filters.audio | filters.document))
-async def convert_audio_command(client, message):
-    sent_msg = await message.reply_text("Downloading...")
 
-    # Download the replied audio file with progress tracking
-    file = await client.download_media(
-        message.reply_to_message.audio or message.reply_to_message.document,
-        progress=progress_for_pyrogram,
-        progress_args=(sent_msg, "Downloading...")
-    )
-    
-    # Sanitize the file path
-    sanitized_file = sanitize_filename(file)
+@app.on_message(filters.command("confirm_remove") & filters.reply)
+async def confirm_remove(client: Client, message: Message):
+    user_data = message.reply_to_message.user_data
 
-    # Rename the file to its sanitized version
-    os.rename(file, sanitized_file)
-
-    # Store the sanitized file path in the user's state (using message ID as a key)
-    user_files[message.from_user.id] = sanitized_file
-    
-    # Create inline keyboard for format selection
-    keyboard = InlineKeyboardMarkup([
-        [InlineKeyboardButton("MP3", callback_data="mp3"),
-         InlineKeyboardButton("AAC", callback_data="aac")],
-        [InlineKeyboardButton("Opus", callback_data="opus"),
-         InlineKeyboardButton("OGG", callback_data="ogg")],
-        [InlineKeyboardButton("WAV", callback_data="wav"),
-         InlineKeyboardButton("AC3", callback_data="ac3")],
-        [InlineKeyboardButton("M4A", callback_data="m4a"),
-         InlineKeyboardButton("Cancel", callback_data="cancel")]
-    ])
-    
-    # Send message with inline keyboard
-    await sent_msg.edit_text("Choose the output format:", reply_markup=keyboard)
-
-# Callback query handler for format selection
-@app.on_callback_query()
-async def callback_query_handler(client, callback_query):
-    user_id = callback_query.from_user.id
-    file = user_files.get(user_id)
-
-    if not file or not is_valid_file(file):
-        await callback_query.message.edit_text("No valid file found to convert. It may be corrupted or empty.")
+    if not user_data["streams_to_remove"]:
+        await message.reply("No streams selected for removal.")
         return
 
-    output_format = callback_query.data
-
-    if callback_query.data == "cancel":
-        await callback_query.message.edit_text("Conversion canceled.")
-        if os.path.exists(file):
-            os.remove(file)
-        user_files.pop(user_id, None)
-        return
-
-    # Check if the file is already in the desired format
-    if is_same_format(file, output_format):
-        await callback_query.message.edit_text(f"The file is already in {output_format} format.")
-        if os.path.exists(file):
-            os.remove(file)
-        user_files.pop(user_id, None)
-        return
-
-    await callback_query.message.edit_text(f"Converting to {output_format}...")
-
-    # Convert the audio file
-    output_file = await convert_audio(file, output_format)
+    await user_data["msg_reply"].edit("Removing selected streams...")
+    output_file = remove_streams(user_data["file_path"], user_data["streams_to_remove"])
     
-    # Check if the conversion succeeded
-    if not output_file:
-        await callback_query.message.edit_text("Conversion failed. The output file is invalid or empty.")
-        if os.path.exists(file):
-            os.remove(file)
-        user_files.pop(user_id, None)
-        return
+    await user_data["msg_reply"].edit("Streams removed successfully. Uploading the file...")
+    await message.reply_document(output_file)
+    await user_data["msg_reply"].delete()
 
-    # Upload the converted file with progress tracking
-    sent_msg = await callback_query.message.edit_text("Uploading...")
-    await client.send_audio(
-        chat_id=callback_query.message.chat.id, 
-        audio=output_file,
-        progress=progress_for_pyrogram,
-        progress_args=(sent_msg, "Uploading...")
-    )
-
-    # Clean up
-    os.remove(file)
+    # Cleanup
+    os.remove(user_data["file_path"])
     os.remove(output_file)
-    user_files.pop(user_id, None)
+
 
 app.run()
