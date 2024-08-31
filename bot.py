@@ -1,6 +1,7 @@
 from pyrogram import Client, filters
 from pyrogram.types import InlineKeyboardMarkup, InlineKeyboardButton
 import os
+import re
 import asyncio
 import ffmpeg
 import time
@@ -31,6 +32,14 @@ async def progress_for_pyrogram(current, total, message, action):
     except Exception as e:
         print(e)
 
+# Function to sanitize the file name
+def sanitize_filename(filename):
+    # Replace or remove problematic characters
+    sanitized_filename = re.sub(r'[^\x00-\x7F]+', '', filename)  # Remove non-ASCII characters
+    sanitized_filename = sanitized_filename.replace('\xa0', ' ')  # Replace non-breaking spaces with regular spaces
+    sanitized_filename = re.sub(r'\s+', ' ', sanitized_filename).strip()  # Normalize whitespace
+    return sanitized_filename
+
 # Command handler for /convert_audio
 @app.on_message(filters.command("convert_audio") & (filters.reply | filters.audio | filters.document))
 async def convert_audio_command(client, message):
@@ -43,8 +52,14 @@ async def convert_audio_command(client, message):
         progress_args=(sent_msg, "Downloading...")
     )
     
-    # Store the file path in the user's state (using message ID as a key)
-    user_files[message.from_user.id] = file
+    # Sanitize the file path
+    sanitized_file = sanitize_filename(file)
+
+    # Rename the file to its sanitized version
+    os.rename(file, sanitized_file)
+
+    # Store the sanitized file path in the user's state (using message ID as a key)
+    user_files[message.from_user.id] = sanitized_file
     
     # Create inline keyboard for format selection
     keyboard = InlineKeyboardMarkup([
