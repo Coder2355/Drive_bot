@@ -44,6 +44,10 @@ def sanitize_filename(filename):
 def is_same_format(file_path, output_format):
     return file_path.lower().endswith(f".{output_format.lower()}")
 
+# Function to check if the file exists and has a non-zero size
+def is_valid_file(file_path):
+    return os.path.exists(file_path) and os.path.getsize(file_path) > 0
+
 # Command handler for /convert_audio
 @app.on_message(filters.command("convert_audio") & (filters.reply | filters.audio | filters.document))
 async def convert_audio_command(client, message):
@@ -86,22 +90,24 @@ async def callback_query_handler(client, callback_query):
     user_id = callback_query.from_user.id
     file = user_files.get(user_id)
 
-    if not file:
-        await callback_query.message.edit_text("No file found to convert.")
+    if not file or not is_valid_file(file):
+        await callback_query.message.edit_text("No valid file found to convert. It may be corrupted or empty.")
         return
 
     output_format = callback_query.data
 
     if callback_query.data == "cancel":
         await callback_query.message.edit_text("Conversion canceled.")
-        os.remove(file)
+        if os.path.exists(file):
+            os.remove(file)
         user_files.pop(user_id, None)
         return
 
     # Check if the file is already in the desired format
     if is_same_format(file, output_format):
         await callback_query.message.edit_text(f"The file is already in {output_format} format.")
-        os.remove(file)
+        if os.path.exists(file):
+            os.remove(file)
         user_files.pop(user_id, None)
         return
 
@@ -110,6 +116,16 @@ async def callback_query_handler(client, callback_query):
     # Convert the audio file
     output_file = await convert_audio(file, output_format)
     
+    # Ensure the output file is valid before sending
+    if not is_valid_file(output_file):
+        await callback_query.message.edit_text("Conversion failed. The output file is invalid or empty.")
+        if os.path.exists(file):
+            os.remove(file)
+        if os.path.exists(output_file):
+            os.remove(output_file)
+        user_files.pop(user_id, None)
+        return
+
     # Upload the converted file with progress tracking
     sent_msg = await callback_query.message.edit_text("Uploading...")
     await client.send_audio(
