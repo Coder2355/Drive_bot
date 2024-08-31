@@ -2,6 +2,7 @@ from pyrogram import Client, filters
 from pyrogram.types import InlineKeyboardMarkup, InlineKeyboardButton
 import os
 import re
+import subprocess 
 import asyncio
 import ffmpeg
 import time
@@ -13,15 +14,24 @@ app = Client("audio_converter_bot", api_id=API_ID, api_hash=API_HASH, bot_token=
 # Dictionary to store file paths
 user_files = {}
 
+
 # Function to convert audio
 async def convert_audio(file_path, output_format):
     output_file = f"{os.path.splitext(file_path)[0]}.{output_format}"
-    await asyncio.create_subprocess_shell(
+
+    process = await asyncio.create_subprocess_shell(
         f"ffmpeg -i {file_path} {output_file}",
         stdout=asyncio.subprocess.PIPE,
         stderr=asyncio.subprocess.PIPE,
     )
-    return output_file
+
+    stdout, stderr = await process.communicate()
+
+    if process.returncode != 0:
+        print(f"FFmpeg error: {stderr.decode()}")
+        return None  # Return None to indicate failure
+
+    return output_file if os.path.exists(output_file) and os.path.getsize(output_file) > 0 else None
 
 # Progress function
 async def progress_for_pyrogram(current, total, message, action):
@@ -116,13 +126,11 @@ async def callback_query_handler(client, callback_query):
     # Convert the audio file
     output_file = await convert_audio(file, output_format)
     
-    # Ensure the output file is valid before sending
-    if not is_valid_file(output_file):
+    # Check if the conversion succeeded
+    if not output_file:
         await callback_query.message.edit_text("Conversion failed. The output file is invalid or empty.")
         if os.path.exists(file):
             os.remove(file)
-        if os.path.exists(output_file):
-            os.remove(output_file)
         user_files.pop(user_id, None)
         return
 
@@ -140,5 +148,4 @@ async def callback_query_handler(client, callback_query):
     os.remove(output_file)
     user_files.pop(user_id, None)
 
-# Run the bot
 app.run()
