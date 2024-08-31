@@ -40,6 +40,10 @@ def sanitize_filename(filename):
     sanitized_filename = re.sub(r'\s+', ' ', sanitized_filename).strip()  # Normalize whitespace
     return sanitized_filename
 
+# Function to check if the file is already in the desired format
+def is_same_format(file_path, output_format):
+    return file_path.lower().endswith(f".{output_format.lower()}")
+
 # Command handler for /convert_audio
 @app.on_message(filters.command("convert_audio") & (filters.reply | filters.audio | filters.document))
 async def convert_audio_command(client, message):
@@ -86,13 +90,21 @@ async def callback_query_handler(client, callback_query):
         await callback_query.message.edit_text("No file found to convert.")
         return
 
+    output_format = callback_query.data
+
     if callback_query.data == "cancel":
         await callback_query.message.edit_text("Conversion canceled.")
         os.remove(file)
         user_files.pop(user_id, None)
         return
 
-    output_format = callback_query.data
+    # Check if the file is already in the desired format
+    if is_same_format(file, output_format):
+        await callback_query.message.edit_text(f"The file is already in {output_format} format.")
+        os.remove(file)
+        user_files.pop(user_id, None)
+        return
+
     await callback_query.message.edit_text(f"Converting to {output_format}...")
 
     # Convert the audio file
