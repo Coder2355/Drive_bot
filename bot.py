@@ -163,10 +163,11 @@ async def process_video(client, message, user_id):
     await status_message.edit_text("📤 Uploading the processed video...")
 
     # Upload the processed video with the thumbnail and progress
-    await client.send_document(
+    await client.send_video(
         chat_id=message.chat.id,
-        document=output_file,
+        video=output_file,
         thumb=thumbnail_path,
+        duration=duration,
         progress=progress,
         message=message,
         status_message="Uploading",
