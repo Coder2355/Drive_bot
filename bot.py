@@ -13,7 +13,7 @@ app = Client("stream_remover_bot", api_id=API_ID, api_hash=API_HASH, bot_token=B
 # Dictionary to store stream selection
 stream_selection = {}
 
-async def progress(current, total, message, status_message, process):
+async def progress(current, total, status_message, process):
     try:
         progress_percentage = current * 100 / total
         progress_text = f"{status_message}: {progress_percentage:.1f}%\n"
@@ -48,7 +48,7 @@ async def stream_remove(client, message):
 
     # Download the video file with progress
     video_message = message.reply_to_message
-    file_path = await client.download(video_message, progress=progress, message=video_message, status_message="Downloading", process=status_message)
+    file_path = await video_message.download(progress=progress_for_download, progress_args=(status_message, "Downloading"))
 
     # Extract video duration
     duration = extract_video_duration(file_path)
@@ -168,10 +168,8 @@ async def process_video(client, message, user_id):
         video=output_file,
         thumb=thumbnail_path,
         duration=duration,
-        progress=progress,
-        message=message,
-        status_message="Uploading",
-        process=status_message
+        progress=progress_for_upload,
+        progress_args=(status_message, "Uploading")
     )
 
     # Cleanup
@@ -182,5 +180,12 @@ async def process_video(client, message, user_id):
 
     # Update the status to indicate completion
     await status_message.edit_text("✅ Processing and upload complete!")
+
+# Progress function for downloading and uploading
+async def progress_for_download(current, total, status_message, process):
+    await progress(current, total, status_message, process)
+
+async def progress_for_upload(current, total, status_message, process):
+    await progress(current, total, status_message, process)
 
 app.run()
