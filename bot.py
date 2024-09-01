@@ -48,7 +48,7 @@ async def stream_remove(client, message):
 
     # Download the video file with progress
     video_message = message.reply_to_message
-    file_path = await video_message.download(progress=progress, message=video_message, status_message="Downloading", process=status_message)
+    file_path = await client.download(video_message, progress=progress, message=video_message, status_message="Downloading", process=status_message)
 
     # Extract video duration
     duration = extract_video_duration(file_path)
