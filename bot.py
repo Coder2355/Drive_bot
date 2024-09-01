@@ -34,12 +34,19 @@ def extract_video_duration(file_path):
 
 def take_screenshot(file_path, timestamp, output_image):
     """Takes a screenshot from the video at a given timestamp."""
-    (
-        ffmpeg
-        .input(file_path, ss=timestamp)
-        .output(output_image, vframes=1)
-        .run(overwrite_output=True)
-    )
+    try:
+        (
+            ffmpeg
+            .input(file_path, ss=timestamp)
+            .output(output_image, vframes=1)
+            .run(overwrite_output=True)
+        )
+        if not os.path.exists(output_image):
+            raise FileNotFoundError(f"Screenshot could not be created: {output_image}")
+    except Exception as e:
+        print(f"Error taking screenshot: {e}")
+        if os.path.exists(output_image):
+            os.remove(output_image)
 
 @app.on_message(filters.command("stream_remove") & filters.reply)
 async def stream_remove(client, message):
@@ -139,6 +146,10 @@ async def process_video(client, message, user_id):
     screenshot_timestamp = duration // 2  # Take screenshot at the midpoint of the video
     take_screenshot(file_path, screenshot_timestamp, thumbnail_path)
 
+    # Ensure the thumbnail exists
+    if not os.path.exists(thumbnail_path):
+        thumbnail_path = None
+
     # Create a list of "-map" arguments
     map_args = []
     for index, keep in enumerate(selected_streams):
@@ -163,11 +174,10 @@ async def process_video(client, message, user_id):
     await status_message.edit_text("📤 Uploading the processed video...")
 
     # Upload the processed video with the thumbnail and progress
-    await client.send_video(
+    await client.send_document(
         chat_id=message.chat.id,
-        video=output_file,
-        thumb=thumbnail_path,
-        duration=duration,
+        document=output_file,
+        thumb=thumbnail_path if thumbnail_path else None,
         progress=progress_for_upload,
         progress_args=(status_message, "Uploading")
     )
@@ -175,7 +185,8 @@ async def process_video(client, message, user_id):
     # Cleanup
     os.remove(file_path)
     os.remove(output_file)
-    os.remove(thumbnail_path)
+    if thumbnail_path:
+        os.remove(thumbnail_path)
     del stream_selection[user_id]
 
     # Update the status to indicate completion
