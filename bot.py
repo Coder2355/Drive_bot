@@ -13,14 +13,14 @@ app = Client("stream_remover_bot", api_id=API_ID, api_hash=API_HASH, bot_token=B
 # Dictionary to store stream selection
 stream_selection = {}
 
-async def progress(current, total, status_message, process):
+async def progress(current, total, status_message):
     try:
         progress_percentage = current * 100 / total
-        progress_text = f"{status_message}: {progress_percentage:.1f}%\n"
+        progress_text = f"📥 {status_message}: {progress_percentage:.1f}%\n"
         progress_text += f"{current / 1024 / 1024:.1f}MB of {total / 1024 / 1024:.1f}MB"
 
         # Edit the status message with the updated progress
-        await process.edit_text(progress_text)
+        await status_message.edit_text(progress_text)
     except MessageNotModified:
         pass  # Handle case when message is not modified (e.g., same progress)
 
@@ -55,7 +55,7 @@ async def stream_remove(client, message):
 
     # Download the video file with progress
     video_message = message.reply_to_message
-    file_path = await video_message.download(progress=progress_for_download, progress_args=(status_message, "Downloading"))
+    file_path = await video_message.download(progress=progress, progress_args=(status_message,))
 
     # Extract video duration
     duration = extract_video_duration(file_path)
@@ -174,12 +174,12 @@ async def process_video(client, message, user_id):
     await status_message.edit_text("📤 Uploading the processed video...")
 
     # Upload the processed video with the thumbnail and progress
-    await client.send_document(
+    await client.send_video(
         chat_id=message.chat.id,
-        document=output_file,
-        thumb=thumbnail_path if thumbnail_path else None,
-        progress=progress_for_upload,
-        progress_args=(status_message, "Uploading")
+        video=output_file,
+        thumb=thumbnail_path,
+        progress=progress,
+        progress_args=(status_message,)
     )
 
     # Cleanup
@@ -193,10 +193,10 @@ async def process_video(client, message, user_id):
     await status_message.edit_text("✅ Processing and upload complete!")
 
 # Progress function for downloading and uploading
-async def progress_for_download(current, total, status_message, process):
-    await progress(current, total, status_message, process)
+async def progress_for_download(current, total, status_message):
+    await progress(current, total, status_message)
 
-async def progress_for_upload(current, total, status_message, process):
-    await progress(current, total, status_message, process)
+async def progress_for_upload(current, total, status_message):
+    await progress(current, total, status_message)
 
 app.run()
