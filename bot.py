@@ -3,21 +3,55 @@ import asyncio
 import ffmpeg
 from pyrogram import Client, filters
 from pyrogram.types import InlineKeyboardMarkup, InlineKeyboardButton
+from pyrogram.errors import MessageNotModified
+from hachoir.parser import createParser
+from hachoir.metadata import extractMetadata
 from config import API_ID, API_HASH, BOT_TOKEN
 
-app = Client("stream_remover_bot", api_id=API_ID, api_hash=API_HASH, bot_token=BOT_TOKEN)
+app = Client("stream_remover_bot", api_id=api_id, api_hash=api_hash, bot_token=bot_token)
 
 # Dictionary to store stream selection
 stream_selection = {}
+
+async def progress(current, total, message, status_message, process):
+    try:
+        progress_percentage = current * 100 / total
+        progress_text = f"{status_message}: {progress_percentage:.1f}%\n"
+        progress_text += f"{current / 1024 / 1024:.1f}MB of {total / 1024 / 1024:.1f}MB"
+
+        # Edit the status message with the updated progress
+        await process.edit_text(progress_text)
+    except MessageNotModified:
+        pass  # Handle case when message is not modified (e.g., same progress)
+
+def extract_video_duration(file_path):
+    """Extracts the duration of the video."""
+    metadata = extractMetadata(createParser(file_path))
+    duration = 0
+    if metadata and metadata.has("duration"):
+        duration = metadata.get("duration").seconds
+    return duration
+
+def take_screenshot(file_path, timestamp, output_image):
+    """Takes a screenshot from the video at a given timestamp."""
+    (
+        ffmpeg
+        .input(file_path, ss=timestamp)
+        .output(output_image, vframes=1)
+        .run(overwrite_output=True)
+    )
 
 @app.on_message(filters.command("stream_remove") & filters.reply)
 async def stream_remove(client, message):
     # Send a message indicating download status
     status_message = await message.reply("📥 Downloading video file...")
-    
-    # Download the video file
+
+    # Download the video file with progress
     video_message = message.reply_to_message
-    file_path = await video_message.download()
+    file_path = await video_message.download(progress=progress, message=video_message, status_message="Downloading", process=status_message)
+
+    # Extract video duration
+    duration = extract_video_duration(file_path)
 
     # Update the status message to indicate download completion
     await status_message.edit_text("📥 Video downloaded successfully. Analyzing streams...")
@@ -45,6 +79,7 @@ async def stream_remove(client, message):
     # Store initial state
     stream_selection[message.chat.id] = [False] * len(streams)
     stream_selection["file_path"] = file_path
+    stream_selection["duration"] = duration
     stream_selection["status_message"] = status_message
 
 @app.on_callback_query()
@@ -95,8 +130,14 @@ async def update_buttons(callback_query):
 async def process_video(client, message, user_id):
     selected_streams = stream_selection[user_id]
     file_path = stream_selection["file_path"]
+    duration = stream_selection["duration"]
     status_message = stream_selection["status_message"]
     output_file = "output_" + os.path.basename(file_path)
+    thumbnail_path = "thumbnail.jpg"
+
+    # Take a screenshot at the halfway point
+    screenshot_timestamp = duration // 2  # Take screenshot at the midpoint of the video
+    take_screenshot(file_path, screenshot_timestamp, thumbnail_path)
 
     # Create a list of "-map" arguments
     map_args = []
@@ -121,12 +162,21 @@ async def process_video(client, message, user_id):
     # Update status to indicate upload
     await status_message.edit_text("📤 Uploading the processed video...")
 
-    # Upload the processed video
-    await message.reply_document(output_file)
+    # Upload the processed video with the thumbnail and progress
+    await client.send_document(
+        chat_id=message.chat.id,
+        document=output_file,
+        thumb=thumbnail_path,
+        progress=progress,
+        message=message,
+        status_message="Uploading",
+        process=status_message
+    )
 
     # Cleanup
     os.remove(file_path)
     os.remove(output_file)
+    os.remove(thumbnail_path)
     del stream_selection[user_id]
 
     # Update the status to indicate completion
