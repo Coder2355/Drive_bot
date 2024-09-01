@@ -8,7 +8,7 @@ from hachoir.parser import createParser
 from hachoir.metadata import extractMetadata
 from config import API_ID, API_HASH, BOT_TOKEN
 
-app = Client("stream_remover_bot", api_id=api_id, api_hash=api_hash, bot_token=bot_token)
+app = Client("stream_remover_bot", api_id=API_ID, api_hash=API_HASH, bot_token=BOT_TOKEN)
 
 # Dictionary to store stream selection
 stream_selection = {}
