@@ -9,7 +9,7 @@ app = Client("audio_video_editor_bot", bot_token=BOT_TOKEN, api_id=API_ID, api_h
 
 DOWNLOAD_DIR = './downloads/'
 
-app.user_data = {}
+user_data = {}
 
 @app.on_message(filters.video | filters.document)
 async def handle_stream_remover(client, message: Message):
