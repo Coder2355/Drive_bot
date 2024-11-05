@@ -27,6 +27,11 @@ async def stream_remove(client, message):
 
     # Retrieve streams info from the video using ffmpeg
     streams = ffmpeg.probe(file_path)["streams"]
+    
+    # Define the duration by looking at the first video stream's duration
+    duration = next((stream.get("duration") for stream in streams if stream["codec_type"] == "video"), None)
+    if duration is not None:
+        duration = float(duration)  # Convert duration to a float if it's available as a string
 
     # Create inline buttons for each stream
     buttons = []
