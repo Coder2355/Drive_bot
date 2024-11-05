@@ -18,9 +18,7 @@ async def stream_remove(client, message):
     # Send a message indicating download status
     status_message = await message.reply("📥 Downloading video file...")
 
-    # Download the video file with progress
-    video_message = message.reply_to_message
-    file_path = await video_message.download(progress=progress_for_pyrogram, progress_args=("📥 Downloading video file...", status_message, time.time()))
+    file_path = await message.download(progress=progress_for_pyrogram, progress_args=("📥 Downloading video file...", status_message, time.time()))
 
     # Update the status message to indicate download completion
     await status_message.edit_text("Analyzing the streams from your file 🎆...")
