@@ -13,7 +13,7 @@ app = Client("audio_video_editor_bot", bot_token=BOT_TOKEN, api_id=API_ID, api_h
 # Dictionary to store stream selection
 stream_selection = {}
 
-@app.on_message(filters.command("stream_remove") & filters.reply)
+@app.on_message(filters.video | filters.document)
 async def stream_remove(client, message):
     # Send a message indicating download status
     status_message = await message.reply("📥 Downloading video file...")
