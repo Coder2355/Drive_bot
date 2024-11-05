@@ -1,133 +1,165 @@
+import os
+import time
 import asyncio
+import ffmpeg
 from pyrogram import Client, filters
 from pyrogram.types import InlineKeyboardMarkup, InlineKeyboardButton
-import os
-import ffmpeg
+from pyrogram.errors import MessageNotModified
+from utils import progress_for_pyrogram  # Import the function
+from config import BOT_TOKEN, API_ID, API_HASH
 
-from config import API_ID, API_HASH, BOT_TOKEN
+app = Client("audio_video_editor_bot", bot_token=BOT_TOKEN, api_id=API_ID, api_hash=API_HASH)
 
-app = Client("stream_remover_bot", api_id=API_ID, api_hash=API_HASH, bot_token=BOT_TOKEN)
+# Dictionary to store stream selection
+stream_selection = {}
 
+@app.on_message(filters.command("stream_remove") & filters.reply)
+async def stream_remove(client, message):
+    # Send a message indicating download status
+    status_message = await message.reply("📥 Downloading video file...")
 
-# Store user selections (a dictionary to store selections based on user IDs)
-user_selections = {}
+    # Download the video file with progress
+    video_message = message.reply_to_message
+    file_path = await video_message.download(progress=progress_for_pyrogram, progress_args=("📥 Downloading video file...", status_message, time.time()))
 
-@app.on_message(filters.command("stream_rem") & filters.reply)
-async def stream_remover(client, message):
-    # Download the video/document
-    reply_message = message.reply_to_message
-    file_path = await reply_message.download()
+    # Update the status message to indicate download completion
+    await status_message.edit_text("Analyzing the streams from your file 🎆...")
 
-    # Extract the streams using FFmpeg
-    streams = extract_streams(file_path)
-    
-    if streams:
-        # Build the keyboard with stream options
-        keyboard = []
-        for idx, stream in enumerate(streams, 1):
-            keyboard.append([InlineKeyboardButton(f"{idx} {stream}", callback_data=f"stream_{idx}")])
-        
-        # Add Done and Cancel buttons
-        keyboard.append([InlineKeyboardButton("Done ✅", callback_data="done"), InlineKeyboardButton("Cancel ❌", callback_data="cancel")])
+    # Retrieve streams info from the video using ffmpeg
+    streams = ffmpeg.probe(file_path)["streams"]
 
-        # Send a message with the stream options
-        await message.reply(
-            "Okay, Now Select All The Streams You Want To Remove From Media.\nYou Have 5 Minutes",
-            reply_markup=InlineKeyboardMarkup(keyboard)
-        )
+    # Create inline buttons for each stream
+    buttons = []
+    for index, stream in enumerate(streams):
+        lang = stream.get("tags", {}).get("language")
+        if lang is None or not lang.isalpha():  # Validate the language code
+            lang = "unknown"  # Default to 'unknown' if invalid
 
-        # Save the file path and stream info for the user
-        user_selections[message.from_user.id] = {"file_path": file_path, "streams": streams, "selected_streams": []}
+        codec_type = stream["codec_type"]
+        button_text = f"{index + 1} {lang} {'🎵' if codec_type == 'audio' else '📜'}"
+        buttons.append([InlineKeyboardButton(button_text, callback_data=f"toggle_{index}")])
 
-def extract_streams(file_path):
-    """
-    Extract streams from the video using FFmpeg.
-    """
-    streams = []
-    try:
-        # Use FFmpeg to extract stream details
-        probe = ffmpeg.probe(file_path)
-        for stream in probe['streams']:
-            if stream['codec_type'] in ['audio', 'subtitle']:
-                streams.append(f"{stream['tags'].get('language', 'unknown')} {stream['codec_name']}")
-    except Exception as e:
-        print(f"Error extracting streams: {e}")
-    return streams
+    buttons.append([InlineKeyboardButton("Reverse Selection", callback_data="reverse_selection")])
+    buttons.append([InlineKeyboardButton("Cancel", callback_data="cancel"), InlineKeyboardButton("Done", callback_data="done")])
+
+    # Send the buttons to the user
+    await status_message.edit_text(
+        "Now Select The Streams You Want To remove From Media.",
+        reply_markup=InlineKeyboardMarkup(buttons)
+    )
+
+    # Store initial state
+    stream_selection[message.chat.id] = [False] * len(streams)
+    stream_selection["file_path"] = file_path
+    stream_selection["duration"] = duration
+    stream_selection["status_message"] = status_message
 
 @app.on_callback_query()
-async def handle_callback_query(client, callback_query):
-    user_id = callback_query.from_user.id
+async def callback_handler(client, callback_query):
+    user_id = callback_query.message.chat.id
     data = callback_query.data
 
-    if user_id not in user_selections:
-        await callback_query.answer("No active stream selection!")
-        return
+    # Handling stream selection
+    if data.startswith("toggle_"):
+        index = int(data.split("_")[1])
+        stream_selection[user_id][index] = not stream_selection[user_id][index]
+        await update_buttons(callback_query)
 
-    if data.startswith("stream_"):
-        # Stream selection handling
-        stream_idx = int(data.split("_")[1]) - 1
-        selected_streams = user_selections[user_id]["selected_streams"]
+    # Handling reverse selection
+    elif data == "reverse_selection":
+        stream_selection[user_id] = [not selected for selected in stream_selection[user_id]]
+        await update_buttons(callback_query)
 
-        if stream_idx in selected_streams:
-            selected_streams.remove(stream_idx)  # Deselect
-        else:
-            selected_streams.append(stream_idx)  # Select
-
-        # Update button text (add or remove checkmark)
-        streams = user_selections[user_id]["streams"]
-        keyboard = []
-        for idx, stream in enumerate(streams, 1):
-            if idx - 1 in selected_streams:
-                keyboard.append([InlineKeyboardButton(f"{idx} {stream} ✅", callback_data=f"stream_{idx}")])
-            else:
-                keyboard.append([InlineKeyboardButton(f"{idx} {stream}", callback_data=f"stream_{idx}")])
-
-        # Add Done and Cancel buttons
-        keyboard.append([InlineKeyboardButton("Done ✅", callback_data="done"), InlineKeyboardButton("Cancel ❌", callback_data="cancel")])
-
-        await callback_query.message.edit_reply_markup(reply_markup=InlineKeyboardMarkup(keyboard))
-
-    elif data == "done":
-        # Process the selected streams
-        file_path = user_selections[user_id]["file_path"]
-        selected_streams = user_selections[user_id]["selected_streams"]
-        streams = user_selections[user_id]["streams"]
-
-        # Remove the selected streams
-        await callback_query.answer("Processing your file, please wait...")
-        output_file = await remove_streams(file_path, selected_streams, streams)
-
-        # Upload the processed file
-        await callback_query.message.reply_document(output_file)
-        
-        # Clean up
-        os.remove(output_file)
-        del user_selections[user_id]
-
+    # Handling cancellation
     elif data == "cancel":
-        # Cancel the operation
-        await callback_query.answer("Operation canceled!")
-        del user_selections[user_id]
+        await callback_query.message.edit_text("Stream selection canceled.")
+        os.remove(stream_selection["file_path"])
+        del stream_selection[user_id]
 
-async def remove_streams(file_path, selected_streams, streams):
-    """
-    Remove the selected streams from the video using FFmpeg.
-    """
-    output_file = file_path.replace(".mp4", "_modified.mp4")
+    # Handling completion
+    elif data == "done":
+        await callback_query.message.edit_text("⏳ Processing your video...")
+        await process_video(client, callback_query.message, user_id)
 
-    try:
-        input_streams = []
-        for idx, stream in enumerate(streams):
-            if idx not in selected_streams:
-                input_streams.append(f"-map 0:{idx}")
+async def update_buttons(callback_query):
+    user_id = callback_query.message.chat.id
+    message = callback_query.message
+    streams = ffmpeg.probe(stream_selection["file_path"])["streams"]
+    buttons = []
 
-        # Use FFmpeg to remove selected streams
-        cmd = f"ffmpeg -i {file_path} {' '.join(input_streams)} -c copy {output_file}"
-        os.system(cmd)
-    except Exception as e:
-        print(f"Error removing streams: {e}")
-    
-    return output_file
+    for index, selected in enumerate(stream_selection[user_id]):
+        lang = streams[index].get("tags", {}).get("language")
+        if lang is None or not lang.isalpha():  # Validate the language code
+            lang = "unknown"  # Default to 'unknown' if invalid
 
-# Run the bot
+        codec_type = streams[index]["codec_type"]
+        status = "✅" if selected else ""
+        button_text = f"{index + 1} {lang} {'🎵' if codec_type == 'audio' else '📜'} {status}"
+        buttons.append([InlineKeyboardButton(button_text, callback_data=f"toggle_{index}")])
+
+    buttons.append([InlineKeyboardButton("Reverse Selection", callback_data="reverse_selection")])
+    buttons.append([InlineKeyboardButton("Cancel", callback_data="cancel"), InlineKeyboardButton("Done", callback_data="done")])
+
+    await message.edit_reply_markup(reply_markup=InlineKeyboardMarkup(buttons))
+
+async def process_video(client, message, user_id):
+    selected_streams = stream_selection[user_id]
+    file_path = stream_selection["file_path"]
+    duration = stream_selection["duration"]
+    status_message = stream_selection["status_message"]
+    output_file = "output_" + os.path.basename(file_path)
+    caption = f"Here is your Output file 🗃️🫡"
+    thumbnail_path = "thumbnail.jpg"
+
+    # Take a screenshot at the halfway point
+    screenshot_timestamp = duration // 2  # Take screenshot at the midpoint of the video
+    take_screenshot(file_path, screenshot_timestamp, thumbnail_path)
+
+    # Ensure the thumbnail exists
+    if not os.path.exists(thumbnail_path):
+        thumbnail_path = None
+
+    # Create a list of "-map" arguments
+    map_args = []
+    for index, keep in enumerate(selected_streams):
+        if not keep:
+            map_args.extend(["-map", f"-0:{index}"])
+
+    # Run FFmpeg command
+    process = await asyncio.create_subprocess_exec(
+        "ffmpeg",
+        "-i", file_path,
+        "-map", "0",
+        "-c", "copy",
+        "-map", "-0:d",
+        "-map", "-0:s",
+        *map_args,
+        output_file
+    )
+
+    await process.communicate()
+
+    # Update status to indicate upload
+    await status_message.edit_text("📤 Uploading the processed video...")
+
+    # Upload the processed video with the thumbnail and progress
+    await client.send_video(
+        chat_id=message.chat.id,
+        video=output_file,
+        thumb=thumbnail_path,
+        caption=caption,
+        progress=progress_for_pyrogram,
+        progress_args=("📤Uploading the video..", status_message, time.time())
+    )
+
+    # Cleanup
+    os.remove(file_path)
+    os.remove(output_file)
+    if thumbnail_path:
+        os.remove(thumbnail_path)
+    del stream_selection[user_id]
+
+    # Update the status to indicate completion
+    await status_message.edit_text("✅ Processing and upload complete!")
+
 app.run()
