@@ -1,5 +1,7 @@
 pyrogram
 tgcrypto
+asyncio
+requests
 ffmpeg-python
 flask
 pillow 
