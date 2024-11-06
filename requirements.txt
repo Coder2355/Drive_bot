@@ -1,6 +1,7 @@
 pyrogram
 tgcrypto
 asyncio
+selenium 
 requests
 ffmpeg-python
 flask
