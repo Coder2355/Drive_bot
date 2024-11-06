@@ -1,6 +1,9 @@
 from pyrogram import Client, filters
-import requests
 import config
+from selenium import webdriver
+from selenium.webdriver.chrome.service import Service
+from selenium.webdriver.common.by import By
+from selenium.webdriver.chrome.options import Options
 import time
 
 app = Client(
@@ -11,26 +14,28 @@ app = Client(
 )
 
 def unshorten_gplink(url):
-    try:
-        # Start a session to handle cookies and headers
-        session = requests.Session()
-        session.headers.update({
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
-            'Referer': 'https://gplinks.in'
-        })
-        
-        # Initial request
-        response = session.get(url)
-        
-        # Follow redirects and intermediate steps if needed
-        while 'gplinks' in response.url:
-            time.sleep(2)  # Bypass time delay
-            response = session.get(response.url)
+    # Setup Selenium options
+    options = Options()
+    options.add_argument("--headless")  # Run in headless mode
+    options.add_argument("--no-sandbox")
+    options.add_argument("--disable-dev-shm-usage")
+    driver_service = Service('/path/to/chromedriver')  # Specify path if needed
 
-        # Final expanded URL
-        return response.url
+    try:
+        # Initialize WebDriver
+        driver = webdriver.Chrome(service=driver_service, options=options)
+        driver.get(url)
+
+        # Wait through 15-second timer and redirection
+        time.sleep(15)  # Wait for the timer (adjust as needed)
+
+        # After waiting, fetch the final redirected URL
+        expanded_url = driver.current_url
+        driver.quit()
+        return expanded_url
     except Exception as e:
-        print(f"Error during unshortening: {e}")
+        print(f"Error: {e}")
+        driver.quit()
         return None
 
 @app.on_message(filters.command("unshort") & filters.private)
