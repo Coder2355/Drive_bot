@@ -4,7 +4,6 @@ from selenium import webdriver
 from selenium.webdriver.common.by import By
 from selenium.webdriver.chrome.options import Options
 from selenium.webdriver.chrome.service import Service
-from webdriver_manager.chrome import ChromeDriverManager
 import time
 
 app = Client(
@@ -15,24 +14,22 @@ app = Client(
 )
 
 def unshorten_gplink(url):
-    # Setup Selenium options for headless mode
+    # Setup Chrome options
     options = Options()
-    options.add_argument("--headless")  # Run without GUI
+    options.binary_location = "/usr/bin/google-chrome"  # Chrome binary location in Colab
+    options.add_argument("--headless")  # Enable headless mode
     options.add_argument("--no-sandbox")
     options.add_argument("--disable-dev-shm-usage")
-    options.add_argument("--disable-gpu")  # Disables GPU rendering
-    options.add_argument("--disable-software-rasterizer")  # Required for headless servers
 
     try:
-        # Use Service object for ChromeDriver
-        driver_service = Service(ChromeDriverManager().install())
-        driver = webdriver.Chrome(service=driver_service, options=options)  # Corrected initialization
+        # Initialize WebDriver with ChromeDriver path
+        driver = webdriver.Chrome('/usr/local/bin/chromedriver', options=options)
         driver.get(url)
 
-        # Wait through the timer (adjust as needed)
+        # Wait to bypass the timer (adjust the sleep time as needed)
         time.sleep(15)
 
-        # Get final redirected URL
+        # Get the final URL after redirection
         expanded_url = driver.current_url
         driver.quit()
         return expanded_url
