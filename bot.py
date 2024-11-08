@@ -23,8 +23,9 @@ def unshorten_gplink(url):
     options.add_argument("--disable-software-rasterizer")  # Required for headless servers
 
     try:
-        # Initialize WebDriver using webdriver_manager
-        driver = webdriver.Chrome(ChromeDriverManager().install(), options=options)
+        # Initialize WebDriver service and pass only options to Chrome
+        driver_service = ChromeDriverManager().install()
+        driver = webdriver.Chrome(driver_service, options=options)  # Correct initialization
         driver.get(url)
 
         # Wait through the timer (adjust as needed)
