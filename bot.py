@@ -1,41 +1,43 @@
 from pyrogram import Client, filters
 import config
 from selenium import webdriver
-from selenium.webdriver.chrome.service import Service
 from selenium.webdriver.common.by import By
 from selenium.webdriver.chrome.options import Options
+from webdriver_manager.chrome import ChromeDriverManager
 import time
 
 app = Client(
     "gplink_unshortener_bot",
-    api_id=config.API_ID,
-    api_hash=config.API_HASH,
-    bot_token=config.BOT_TOKEN
+    api_id=config.api_id,
+    api_hash=config.api_hash,
+    bot_token=config.bot_token
 )
 
 def unshorten_gplink(url):
-    # Setup Selenium options
+    # Setup Selenium options for headless mode
     options = Options()
-    options.add_argument("--headless")  # Run in headless mode
+    options.add_argument("--headless")  # Run without GUI
     options.add_argument("--no-sandbox")
     options.add_argument("--disable-dev-shm-usage")
-    driver_service = Service('/path/to/chromedriver')  # Specify path if needed
+    options.add_argument("--disable-gpu")  # Disables GPU rendering
+    options.add_argument("--disable-software-rasterizer")  # Required for headless servers
 
     try:
-        # Initialize WebDriver
-        driver = webdriver.Chrome(service=driver_service, options=options)
+        # Initialize WebDriver using webdriver_manager
+        driver = webdriver.Chrome(ChromeDriverManager().install(), options=options)
         driver.get(url)
 
-        # Wait through 15-second timer and redirection
-        time.sleep(15)  # Wait for the timer (adjust as needed)
+        # Wait through the timer (adjust as needed)
+        time.sleep(15)
 
-        # After waiting, fetch the final redirected URL
+        # Get final redirected URL
         expanded_url = driver.current_url
         driver.quit()
         return expanded_url
     except Exception as e:
         print(f"Error: {e}")
-        driver.quit()
+        if 'driver' in locals():
+            driver.quit()
         return None
 
 @app.on_message(filters.command("unshort") & filters.private)
