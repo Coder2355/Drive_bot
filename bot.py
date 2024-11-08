@@ -8,9 +8,9 @@ import time
 
 app = Client(
     "gplink_unshortener_bot",
-    api_id=config.api_id,
-    api_hash=config.api_hash,
-    bot_token=config.bot_token
+    api_id=config.API_ID,
+    api_hash=config.API_HASH,
+    bot_token=config.BOT_TOKEN
 )
 
 def unshorten_gplink(url):
