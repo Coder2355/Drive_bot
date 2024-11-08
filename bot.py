@@ -3,6 +3,7 @@ import config
 from selenium import webdriver
 from selenium.webdriver.common.by import By
 from selenium.webdriver.chrome.options import Options
+from selenium.webdriver.chrome.service import Service
 from webdriver_manager.chrome import ChromeDriverManager
 import time
 
@@ -23,9 +24,9 @@ def unshorten_gplink(url):
     options.add_argument("--disable-software-rasterizer")  # Required for headless servers
 
     try:
-        # Initialize WebDriver service and pass only options to Chrome
-        driver_service = ChromeDriverManager().install()
-        driver = webdriver.Chrome(driver_service, options=options)  # Correct initialization
+        # Use Service object for ChromeDriver
+        driver_service = Service(ChromeDriverManager().install())
+        driver = webdriver.Chrome(service=driver_service, options=options)  # Corrected initialization
         driver.get(url)
 
         # Wait through the timer (adjust as needed)
