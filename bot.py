@@ -60,17 +60,7 @@ async def process_video(client, message: Message):
         return
 
     try:
-        chat = await client.get_chat(TARGET_CHANNEL_ID)
-        # Now check if the bot is an admin
         
-
-        is_admin = await check_bot_admin_status(client, TARGET_CHANNEL_ID)
-        if not is_admin:
-            chat = await client.get_chat(TARGET_CHANNEL_ID)
-            await message.reply(f"**Error:** Please make the bot an admin in `{chat.title}`.")
-            return
-
-        # Initial message in the target channel
         await message.reply("start downloading")
         status_message = await app.send_message(
             chat_id=TARGET_CHANNEL_ID,
