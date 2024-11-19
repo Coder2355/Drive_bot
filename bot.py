@@ -4,6 +4,10 @@ from pyrogram import Client, filters
 from pyrogram.types import Message
 from pyrogram.errors import FloodWait, RPCError
 from config import API_ID, API_HASH, BOT_TOKEN, SOURCE_CHANNEL_ID
+import pyrogram.utils
+
+pyrogram.utils.MIN_CHANNEL_ID = -1009999999999
+
 
 # Initialize global variable for the target channel
 TARGET_CHANNEL_ID = None  # Default to None
