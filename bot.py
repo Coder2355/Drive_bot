@@ -6,8 +6,8 @@ from pyrogram.errors import FloodWait, RPCError
 from config import API_ID, API_HASH, BOT_TOKEN, SOURCE_CHANNEL_ID
 
 # Initialize global variable for the target channel
-TARGET_CHANNEL = None  # Default to None
-
+TARGET_CHANNEL_ID = None  # Default to None
+ADMINS = [6299192020]
 app = Client("video_forward_bot", api_id=API_ID, api_hash=API_HASH, bot_token=BOT_TOKEN)
 
 
@@ -27,46 +27,44 @@ async def check_bot_admin_status(client, channel_id):
     except RPCError:
         return False
 
-# Command to set target channel
-# Command to set target channel
-@app.on_message(filters.command("set_target") & filters.user("YOUR_TELEGRAM_ID"))
+@app.on_message(filters.command("start")
+async def start (client: Client, message: Message):
+    await message.reply("bot started successfully ✅")
+# Command to set the target channel
+@app.on_message(filters.command("set_target") & filters.user(ADMINS))
 async def set_target_channel(client: Client, message: Message):
-    global TARGET_CHANNEL
-    try:
-        # Extract the channel ID from the command argument
-        command_parts = message.text.split()
-        if len(command_parts) < 2:
-            await message.reply("Usage: /set_target <channel_id>\n\nExample: /set_target -1001234567890")
-            return
+    global TARGET_CHANNEL_ID
 
-        channel_id = command_parts[1]
-        if channel_id.startswith("-100"):
-            TARGET_CHANNEL["id"] = channel_id
+    # Extract channel ID from the message
+    if len(message.command) > 1:
+        channel_id = message.command[1]
+        try:
+            TARGET_CHANNEL_ID = int(channel_id)
             await message.reply("Target channel added successfully ✅")
-        else:
-            await message.reply("Invalid channel ID. Please provide a valid channel ID (e.g., -1001234567890).")
-    except Exception as e:
-        await message.reply(f"An error occurred: {e}")
+        except ValueError:
+            await message.reply("Invalid channel ID. Please provide a valid channel ID.")
+    else:
+        await message.reply("Please provide a channel ID after the command. Example: /set_target 123456789")
 
 # Process videos uploaded to the source channel
 @app.on_message(filters.chat(SOURCE_CHANNEL_ID) & filters.video)
 async def process_video(client, message: Message):
-    global TARGET_CHANNEL
-    if not TARGET_CHANNEL:
+    global TARGET_CHANNEL_ID
+    if not TARGET_CHANNEL_ID:
         await message.reply("**Error:** Target channel not set. Use /set_target to set the channel.")
         return
 
     try:
         # Check bot admin status in the target channel
-        is_admin = await check_bot_admin_status(client, TARGET_CHANNEL)
+        is_admin = await check_bot_admin_status(client, TARGET_CHANNEL_ID)
         if not is_admin:
-            chat = await client.get_chat(TARGET_CHANNEL)
+            chat = await client.get_chat(TARGET_CHANNEL_ID)
             await message.reply(f"**Error:** Please make the bot an admin in `{chat.title}`.")
             return
 
         # Initial message in the target channel
         status_message = await app.send_message(
-            chat_id=TARGET_CHANNEL,
+            chat_id=TARGET_CHANNEL_ID,
             text="**Downloading the file...**",
         )
 
@@ -85,7 +83,7 @@ async def process_video(client, message: Message):
         # Upload the video with progress
         await status_message.edit("**Uploading the file...**")
         await app.send_video(
-            chat_id=TARGET_CHANNEL,
+            chat_id=TARGET_CHANNEL_ID,
             video=renamed_path,
             caption=f"**Renamed File:** {new_name}",
             progress=progress_bar,
