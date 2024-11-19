@@ -27,33 +27,19 @@ async def check_bot_admin_status(client, channel_id):
     except RPCError:
         return False
 
-@app.on_message(filters.forwarded & filters.text & filters.user([6299192020]))  # Replace YOUR_USER_ID with your Telegram ID
-async def set_target_channel_from_forward(client, message: Message):
+# Command to set target channel
+@app.on_message(filters.command("set_target") & filters.user("6299192020"))
+async def set_target_channel(client: Client, message: Message):
     global TARGET_CHANNEL_ID
-
-    # Check if the forwarded message contains the tag
-    if "#set_target" in message.text.lower():
-        try:
-            # Get the original channel ID from the forwarded message
-            forwarded_channel_id = message.forward_from_chat.id
-
-            # Check if the bot is an admin in the forwarded channel
-            is_admin = await check_bot_admin_status(client, forwarded_channel_id)
-            if not is_admin:
-                chat = await client.get_chat(forwarded_channel_id)
-                await message.reply(f"**Error:** Please make the bot an admin in `{chat.title}` before setting it as the target channel.")
-                return
-
-            # Update the global target channel ID
-            TARGET_CHANNEL_ID = forwarded_channel_id
-
-            # Fetch the channel name for confirmation
-            chat = await client.get_chat(forwarded_channel_id)
-            await message.reply(f"**Target channel set to:** {chat.title} ({forwarded_channel_id})")
-        except Exception as e:
-            await message.reply(f"**Error:** Unable to set target channel. {e}")
+    if message.reply_to_message:
+        target_id = message.reply_to_message.text
+        if target_id.startswith("-100"):
+            TARGET_CHANNEL_ID["id"] = target_id
+            await message.reply("Target channel added successfully ✅")
+        else:
+            await message.reply("Invalid channel ID. Please provide a valid channel ID.")
     else:
-        await message.reply("**Error:** The forwarded message must contain the tag `#set_target`.")
+        await message.reply("Please reply with the channel ID to the /set_target command.")
 
 # Process videos uploaded to the source channel
 @app.on_message(filters.chat(SOURCE_CHANNEL_ID) & filters.video)
