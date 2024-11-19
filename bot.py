@@ -27,7 +27,7 @@ async def check_bot_admin_status(client, channel_id):
     except RPCError:
         return False
 
-@app.on_message(filters.command("start")
+@app.on_message(filters.command("start"))
 async def start (client: Client, message: Message):
     await message.reply("bot started successfully ✅")
 # Command to set the target channel
