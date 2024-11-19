@@ -15,12 +15,11 @@ ADMINS = [6299192020]
 app = Client("video_forward_bot", api_id=API_ID, api_hash=API_HASH, bot_token=BOT_TOKEN)
 
 
-# Progress bar function
 async def progress_bar(current, total, message, status_text):
     percentage = (current / total) * 100
     progress = f"{status_text}: {percentage:.2f}% ({current}/{total} bytes)"
     await message.edit(progress)
-
+    await asyncio.sleep(3)  # Delay between edits to avoid flood wait
 
 # Function to check if the bot is an admin in a channel
 async def check_bot_admin_status(client, channel_id):
