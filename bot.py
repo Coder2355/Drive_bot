@@ -27,42 +27,33 @@ async def check_bot_admin_status(client, channel_id):
     except RPCError:
         return False
 
-
-@app.on_message(filters.command("set_target") & filters.user([6299192020]))  # Replace YOUR_USER_ID with your Telegram ID
-async def set_target_channel(client, message: Message):
+@app.on_message(filters.forwarded & filters.text & filters.user([6299192020]))  # Replace YOUR_USER_ID with your Telegram ID
+async def set_target_channel_from_forward(client, message: Message):
     global TARGET_CHANNEL_ID
-    if len(message.command) < 2:
-        await message.reply("**Usage:** /set_target <channel_id>")
-        return
 
-    try:
-        # Parse the target channel ID
-        new_target_channel = message.command[1]
-        
-        # Ensure the channel ID starts with `-100` for channels
-        if not new_target_channel.startswith("-100"):
-            await message.reply("**Error:** Invalid channel ID. Channel IDs must start with `-100`.")
-            return
+    # Check if the forwarded message contains the tag
+    if "#set_target" in message.text.lower():
+        try:
+            # Get the original channel ID from the forwarded message
+            forwarded_channel_id = message.forward_from_chat.id
 
-        # Convert the channel ID to an integer
-        new_target_channel = int(new_target_channel)
+            # Check if the bot is an admin in the forwarded channel
+            is_admin = await check_bot_admin_status(client, forwarded_channel_id)
+            if not is_admin:
+                chat = await client.get_chat(forwarded_channel_id)
+                await message.reply(f"**Error:** Please make the bot an admin in `{chat.title}` before setting it as the target channel.")
+                return
 
-        # Check bot admin status in the target channel
-        is_admin = await check_bot_admin_status(client, new_target_channel)
-        if not is_admin:
-            chat = await client.get_chat(new_target_channel)
-            await message.reply(f"**Error:** Please make the bot an admin in `{chat.title}` before setting it as the target channel.")
-            return
+            # Update the global target channel ID
+            TARGET_CHANNEL_ID = forwarded_channel_id
 
-        # Update the global variable
-        TARGET_CHANNEL_ID = new_target_channel
-        # Fetch the channel name for confirmation
-        chat = await client.get_chat(new_target_channel)
-        await message.reply(f"**Target channel changed to:** {chat.title} ({new_target_channel})")
-    except ValueError:
-        await message.reply("**Error:** Invalid channel ID. Please provide a valid integer.")
-    except Exception as e:
-        await message.reply(f"**Error:** {e}")
+            # Fetch the channel name for confirmation
+            chat = await client.get_chat(forwarded_channel_id)
+            await message.reply(f"**Target channel set to:** {chat.title} ({forwarded_channel_id})")
+        except Exception as e:
+            await message.reply(f"**Error:** Unable to set target channel. {e}")
+    else:
+        await message.reply("**Error:** The forwarded message must contain the tag `#set_target`.")
 
 # Process videos uploaded to the source channel
 @app.on_message(filters.chat(SOURCE_CHANNEL_ID) & filters.video)
