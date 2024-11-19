@@ -22,7 +22,8 @@ async def progress_bar(current, total, message, status_text):
 async def check_bot_admin_status(client, channel_id):
     try:
         member = await client.get_chat_member(chat_id=channel_id, user_id=client.me.id)
-        return member.can_post_messages  # Checks if the bot has admin privileges
+        # Check if the bot is an admin
+        return member.status in ["administrator", "creator"]
     except RPCError:
         return False
 
