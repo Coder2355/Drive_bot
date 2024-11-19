@@ -49,6 +49,7 @@ async def set_target_channel(client: Client, message: Message):
 # Process videos uploaded to the source channel
 @app.on_message(filters.chat(SOURCE_CHANNEL_ID) & filters.video)
 async def process_video(client, message: Message):
+    await message.reply("target channel started")
     global TARGET_CHANNEL_ID
     if not TARGET_CHANNEL_ID:
         await message.reply("**Error:** Target channel not set. Use /set_target to set the channel.")
