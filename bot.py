@@ -1,64 +1,118 @@
+import os
+import asyncio
 from pyrogram import Client, filters
-import config
-from selenium import webdriver
-from selenium.webdriver.common.by import By
-from selenium.webdriver.chrome.options import Options
-from selenium.webdriver.chrome.service import Service
-import time
+from pyrogram.types import Message
+from pyrogram.errors import FloodWait, RPCError
+from config import API_ID, API_HASH, BOT_TOKEN, SOURCE_CHANNEL_ID
 
-app = Client(
-    "gplink_unshortener_bot",
-    api_id=config.API_ID,
-    api_hash=config.API_HASH,
-    bot_token=config.BOT_TOKEN
-)
+# Initialize global variable for the target channel
+TARGET_CHANNEL_ID = None  # Default to None
 
-def unshorten_gplink(url):
-    # Setup Chrome options
-    options = Options()
-    options.binary_location = "/usr/bin/google-chrome"  # Chrome binary location in Colab
-    options.add_argument("--headless")  # Enable headless mode
-    options.add_argument("--no-sandbox")
-    options.add_argument("--disable-dev-shm-usage")
+app = Client("video_forward_bot", api_id=API_ID, api_hash=API_HASH, bot_token=BOT_TOKEN)
+
+
+# Progress bar function
+async def progress_bar(current, total, message, status_text):
+    percentage = (current / total) * 100
+    progress = f"{status_text}: {percentage:.2f}% ({current}/{total} bytes)"
+    await message.edit(progress)
+
+
+# Function to check if the bot is an admin in a channel
+async def check_bot_admin_status(client, channel_id):
+    try:
+        member = await client.get_chat_member(chat_id=channel_id, user_id=client.me.id)
+        return member.can_post_messages  # Checks if the bot has admin privileges
+    except RPCError:
+        return False
+
+
+# Command to set the target channel
+@app.on_message(filters.command("set_target") & filters.user([YOUR_USER_ID]))  # Replace YOUR_USER_ID with your Telegram ID
+async def set_target_channel(client, message: Message):
+    global TARGET_CHANNEL_ID
+    if len(message.command) < 2:
+        await message.reply("**Usage:** /set_target <channel_id>")
+        return
 
     try:
-        # Initialize WebDriver with ChromeDriver path
-        driver = webdriver.Chrome('/usr/local/bin/chromedriver', options=options)
-        driver.get(url)
+        # Parse the target channel ID
+        new_target_channel = int(message.command[1])
 
-        # Wait to bypass the timer (adjust the sleep time as needed)
-        time.sleep(15)
+        # Check bot admin status in the target channel
+        is_admin = await check_bot_admin_status(client, new_target_channel)
+        if not is_admin:
+            chat = await client.get_chat(new_target_channel)
+            await message.reply(f"**Error:** Please make the bot an admin in `{chat.title}` before setting it as the target channel.")
+            return
 
-        # Get the final URL after redirection
-        expanded_url = driver.current_url
-        driver.quit()
-        return expanded_url
+        # Update the global variable
+        TARGET_CHANNEL_ID = new_target_channel
+        # Fetch the channel name for confirmation
+        chat = await client.get_chat(new_target_channel)
+        await message.reply(f"**Target channel changed to:** {chat.title} ({new_target_channel})")
+    except ValueError:
+        await message.reply("**Error:** Invalid channel ID. Please provide a valid integer.")
     except Exception as e:
-        print(f"Error: {e}")
-        if 'driver' in locals():
-            driver.quit()
-        return None
+        await message.reply(f"**Error:** {e}")
 
-@app.on_message(filters.command("unshort") & filters.private)
-async def unshort_handler(client, message):
-    if len(message.command) < 2:
-        await message.reply_text("Please provide a GPLinks URL to unshorten.\nUsage: /unshort <gplink>")
+
+# Process videos uploaded to the source channel
+@app.on_message(filters.chat(SOURCE_CHANNEL_ID) & filters.video)
+async def process_video(client, message: Message):
+    global TARGET_CHANNEL_ID
+    if not TARGET_CHANNEL_ID:
+        await message.reply("**Error:** Target channel not set. Use /set_target to set the channel.")
         return
 
-    url = message.command[1]
-    if "gplinks" not in url:
-        await message.reply_text("Please provide a valid GPLinks URL.")
-        return
+    try:
+        # Check bot admin status in the target channel
+        is_admin = await check_bot_admin_status(client, TARGET_CHANNEL_ID)
+        if not is_admin:
+            chat = await client.get_chat(TARGET_CHANNEL_ID)
+            await message.reply(f"**Error:** Please make the bot an admin in `{chat.title}`.")
+            return
 
-    await message.reply_text("🔍 Unshortening your GPLinks URL...")
+        # Initial message in the target channel
+        status_message = await app.send_message(
+            chat_id=TARGET_CHANNEL_ID,
+            text="**Downloading the file...**",
+        )
 
-    # Process URL
-    expanded_url = unshorten_gplink(url)
+        # Download the video with progress
+        video_path = await message.download(
+            progress=progress_bar,
+            progress_args=(status_message, "Downloading"),
+        )
 
-    if expanded_url:
-        await message.reply_text(f"🔗 Original URL:\n{expanded_url}")
-    else:
-        await message.reply_text("❗ Couldn't unshorten the URL. Please try again.")
+        # Renaming the file
+        await status_message.edit("**Renaming the file...**")
+        new_name = f"Renamed_{os.path.basename(video_path)}"
+        renamed_path = os.path.join(os.path.dirname(video_path), new_name)
+        os.rename(video_path, renamed_path)
 
+        # Upload the video with progress
+        await status_message.edit("**Uploading the file...**")
+        await app.send_video(
+            chat_id=TARGET_CHANNEL_ID,
+            video=renamed_path,
+            caption=f"**Renamed File:** {new_name}",
+            progress=progress_bar,
+            progress_args=(status_message, "Uploading"),
+        )
+
+        # Cleanup and final message
+        os.remove(renamed_path)
+        await status_message.edit("**File uploaded successfully!**")
+        await asyncio.sleep(5)
+        await status_message.delete()
+
+    except FloodWait as e:
+        await asyncio.sleep(e.value)
+    except Exception as e:
+        await app.send_message(chat_id=TARGET_CHANNEL_ID, text=f"**Error:** {e}")
+
+
+# Start the bot
 if __name__ == "__main__":
     app.run()
