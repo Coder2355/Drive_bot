@@ -31,15 +31,16 @@ async def check_bot_admin_status(client, channel_id):
 @app.on_message(filters.command("set_target") & filters.user("6299192020"))
 async def set_target_channel(client: Client, message: Message):
     global TARGET_CHANNEL_ID
-    if message.reply_to_message:
-        target_id = message.reply_to_message.text
-        if target_id.startswith("-100"):
-            TARGET_CHANNEL_ID["id"] = target_id
+    try:
+        # Extract the channel ID from the command argument
+        channel_id = message.text.split(" ", 1)[1]
+        if channel_id.startswith("-100"):
+            TARGET_CHANNEL_ID["id"] = channel_id
             await message.reply("Target channel added successfully ✅")
         else:
-            await message.reply("Invalid channel ID. Please provide a valid channel ID.")
-    else:
-        await message.reply("Please reply with the channel ID to the /set_target command.")
+            await message.reply("Invalid channel ID. Please provide a valid channel ID (e.g., -1001234567890).")
+    except IndexError:
+        await message.reply("Usage: /set_target <channel_id>\n\nExample: /set_target -1001234567890")
 
 # Process videos uploaded to the source channel
 @app.on_message(filters.chat(SOURCE_CHANNEL_ID) & filters.video)
