@@ -6,7 +6,7 @@ from pyrogram.errors import FloodWait, RPCError
 from config import API_ID, API_HASH, BOT_TOKEN, SOURCE_CHANNEL_ID
 
 # Initialize global variable for the target channel
-TARGET_CHANNEL_ID = None  # Default to None
+TARGET_CHANNEL = None  # Default to None
 
 app = Client("video_forward_bot", api_id=API_ID, api_hash=API_HASH, bot_token=BOT_TOKEN)
 
@@ -28,19 +28,25 @@ async def check_bot_admin_status(client, channel_id):
         return False
 
 # Command to set target channel
-@app.on_message(filters.command("set_target") & filters.user("6299192020"))
+# Command to set target channel
+@app.on_message(filters.command("set_target") & filters.user("YOUR_TELEGRAM_ID"))
 async def set_target_channel(client: Client, message: Message):
-    global TARGET_CHANNEL_ID
+    global TARGET_CHANNEL
     try:
         # Extract the channel ID from the command argument
-        channel_id = message.text.split(" ", 1)[1]
+        command_parts = message.text.split()
+        if len(command_parts) < 2:
+            await message.reply("Usage: /set_target <channel_id>\n\nExample: /set_target -1001234567890")
+            return
+
+        channel_id = command_parts[1]
         if channel_id.startswith("-100"):
-            TARGET_CHANNEL_ID["id"] = channel_id
+            TARGET_CHANNEL["id"] = channel_id
             await message.reply("Target channel added successfully ✅")
         else:
             await message.reply("Invalid channel ID. Please provide a valid channel ID (e.g., -1001234567890).")
-    except IndexError:
-        await message.reply("Usage: /set_target <channel_id>\n\nExample: /set_target -1001234567890")
+    except Exception as e:
+        await message.reply(f"An error occurred: {e}")
 
 # Process videos uploaded to the source channel
 @app.on_message(filters.chat(SOURCE_CHANNEL_ID) & filters.video)
