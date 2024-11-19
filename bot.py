@@ -51,22 +51,22 @@ async def set_target_channel(client: Client, message: Message):
 # Process videos uploaded to the source channel
 @app.on_message(filters.chat(SOURCE_CHANNEL_ID) & filters.video)
 async def process_video(client, message: Message):
-    global TARGET_CHANNEL_ID
-    if not TARGET_CHANNEL_ID:
+    global TARGET_CHANNEL
+    if not TARGET_CHANNEL:
         await message.reply("**Error:** Target channel not set. Use /set_target to set the channel.")
         return
 
     try:
         # Check bot admin status in the target channel
-        is_admin = await check_bot_admin_status(client, TARGET_CHANNEL_ID)
+        is_admin = await check_bot_admin_status(client, TARGET_CHANNEL)
         if not is_admin:
-            chat = await client.get_chat(TARGET_CHANNEL_ID)
+            chat = await client.get_chat(TARGET_CHANNEL)
             await message.reply(f"**Error:** Please make the bot an admin in `{chat.title}`.")
             return
 
         # Initial message in the target channel
         status_message = await app.send_message(
-            chat_id=TARGET_CHANNEL_ID,
+            chat_id=TARGET_CHANNEL,
             text="**Downloading the file...**",
         )
 
@@ -85,7 +85,7 @@ async def process_video(client, message: Message):
         # Upload the video with progress
         await status_message.edit("**Uploading the file...**")
         await app.send_video(
-            chat_id=TARGET_CHANNEL_ID,
+            chat_id=TARGET_CHANNEL,
             video=renamed_path,
             caption=f"**Renamed File:** {new_name}",
             progress=progress_bar,
