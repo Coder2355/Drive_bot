@@ -28,7 +28,7 @@ async def check_bot_admin_status(client, channel_id):
 
 
 # Command to set the target channel
-@app.on_message(filters.command("set_target") & filters.user([YOUR_USER_ID]))  # Replace YOUR_USER_ID with your Telegram ID
+@app.on_message(filters.command("set_target") & filters.user([6299192020]))  # Replace YOUR_USER_ID with your Telegram ID
 async def set_target_channel(client, message: Message):
     global TARGET_CHANNEL_ID
     if len(message.command) < 2:
