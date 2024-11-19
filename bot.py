@@ -64,6 +64,7 @@ async def process_video(client, message: Message):
             return
 
         # Initial message in the target channel
+        await message.reply("start downloading")
         status_message = await app.send_message(
             chat_id=TARGET_CHANNEL_ID,
             text="**Downloading the file...**",
