@@ -28,7 +28,6 @@ async def check_bot_admin_status(client, channel_id):
         return False
 
 
-# Command to set the target channel
 @app.on_message(filters.command("set_target") & filters.user([6299192020]))  # Replace YOUR_USER_ID with your Telegram ID
 async def set_target_channel(client, message: Message):
     global TARGET_CHANNEL_ID
@@ -38,7 +37,15 @@ async def set_target_channel(client, message: Message):
 
     try:
         # Parse the target channel ID
-        new_target_channel = int(message.command[1])
+        new_target_channel = message.command[1]
+        
+        # Ensure the channel ID starts with `-100` for channels
+        if not new_target_channel.startswith("-100"):
+            await message.reply("**Error:** Invalid channel ID. Channel IDs must start with `-100`.")
+            return
+
+        # Convert the channel ID to an integer
+        new_target_channel = int(new_target_channel)
 
         # Check bot admin status in the target channel
         is_admin = await check_bot_admin_status(client, new_target_channel)
@@ -56,7 +63,6 @@ async def set_target_channel(client, message: Message):
         await message.reply("**Error:** Invalid channel ID. Please provide a valid integer.")
     except Exception as e:
         await message.reply(f"**Error:** {e}")
-
 
 # Process videos uploaded to the source channel
 @app.on_message(filters.chat(SOURCE_CHANNEL_ID) & filters.video)
