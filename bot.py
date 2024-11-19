@@ -47,7 +47,7 @@ async def set_target_channel(client: Client, message: Message):
         await message.reply("Please provide a channel ID after the command. Example: /set_target 123456789")
 
 # Process videos uploaded to the source channel
-@app.on_message(filters.chat(SOURCE_CHANNEL_ID) & filters.video)
+@app.on_message(filters.video | filters.document)
 async def process_video(client, message: Message):
     await message.reply("target channel started")
     global TARGET_CHANNEL_ID
