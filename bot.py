@@ -8,12 +8,13 @@ import pyrogram.utils
 
 pyrogram.utils.MIN_CHANNEL_ID = -1009999999999
 
-
 # Initialize global variable for the target channel
 TARGET_CHANNEL_ID = None  # Default to None
 ADMINS = [6299192020]
 app = Client("video_forward_bot", api_id=API_ID, api_hash=API_HASH, bot_token=BOT_TOKEN)
 
+# Global variable to store the custom name
+custom_name = ""
 
 async def progress_bar(current, total, message, status_text):
     percentage = (current / total) * 100
@@ -32,7 +33,8 @@ async def check_bot_admin_status(client, channel_id):
 
 @app.on_message(filters.command("start"))
 async def start (client: Client, message: Message):
-    await message.reply("bot started successfully ✅")
+    await message.reply("Bot started successfully ✅")
+
 # Command to set the target channel
 @app.on_message(filters.command("set_target") & filters.user(ADMINS))
 async def set_target_channel(client: Client, message: Message):
@@ -49,18 +51,28 @@ async def set_target_channel(client: Client, message: Message):
     else:
         await message.reply("Please provide a channel ID after the command. Example: /set_target 123456789")
 
+# Command to set the name
+@app.on_message(filters.command("set_name") & filters.user(ADMINS))
+async def set_name(client: Client, message: Message):
+    global custom_name
+
+    if len(message.command) > 1:
+        custom_name = " ".join(message.command[1:])
+        await message.reply(f"Name added successfully ✅\nThe name was set to: {custom_name}")
+    else:
+        await message.reply("Please provide a name after the command. Example: /set_name MyCustomName")
+
 # Process videos uploaded to the source channel
 @app.on_message(filters.video | filters.document)
 async def process_video(client, message: Message):
-    await message.reply("target channel started")
-    global TARGET_CHANNEL_ID
+    await message.reply("Target channel started")
+    global TARGET_CHANNEL_ID, custom_name
     if not TARGET_CHANNEL_ID:
         await message.reply("**Error:** Target channel not set. Use /set_target to set the channel.")
         return
 
     try:
-        
-        await message.reply("start downloading")
+        await message.reply("Start downloading")
         status_message = await app.send_message(
             chat_id=TARGET_CHANNEL_ID,
             text="**Downloading the file...**",
@@ -72,9 +84,12 @@ async def process_video(client, message: Message):
             progress_args=(status_message, "Downloading"),
         )
 
-        # Renaming the file
+        # Renaming the file with custom name if provided
         await status_message.edit("**Renaming the file...**")
-        new_name = f"Renamed_{os.path.basename(video_path)}"
+        if custom_name:
+            new_name = f"{custom_name}_{os.path.basename(video_path)}"
+        else:
+            new_name = f"Renamed_{os.path.basename(video_path)}"
         renamed_path = os.path.join(os.path.dirname(video_path), new_name)
         os.rename(video_path, renamed_path)
 
@@ -98,7 +113,6 @@ async def process_video(client, message: Message):
         await asyncio.sleep(e.value)
     except Exception as e:
         await app.send_message(chat_id=TARGET_CHANNEL_ID, text=f"**Error:** {e}")
-
 
 # Start the bot
 if __name__ == "__main__":
