@@ -56,7 +56,10 @@ async def process_video(client, message: Message):
         return
 
     try:
-        # Check bot admin status in the target channel
+        chat = await client.get_chat(TARGET_CHANNEL_ID)
+        # Now check if the bot is an admin
+        
+
         is_admin = await check_bot_admin_status(client, TARGET_CHANNEL_ID)
         if not is_admin:
             chat = await client.get_chat(TARGET_CHANNEL_ID)
