@@ -15,7 +15,7 @@ async def receive_episode(client: Client, message: Message):
         await message.reply("Please send a valid video or document episode.")
         return
 
-    # Extract filename as episode identifier
+    # Extract the original filename
     filename = message.document.file_name if message.document else message.video.file_name
 
     # Try to extract the episode number from the filename
@@ -43,7 +43,7 @@ async def order_episodes(client: Client, message: Message):
         episode_message = data["message"]
         filename = data["filename"]
 
-        # Send the episode file with the filename as the caption
+        # Send the file with the correct filename as caption
         if episode_message.document:
             await message.reply_document(
                 document=episode_message.document.file_id,
