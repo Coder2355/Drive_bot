@@ -1,7 +1,6 @@
 from pyrogram import Client, filters
 from pyrogram.types import Message
 from config import API_ID, API_HASH, BOT_TOKEN
-import os
 
 # Initialize bot
 bot = Client("episode_order_bot", api_id=API_ID, api_hash=API_HASH, bot_token=BOT_TOKEN)
@@ -44,29 +43,17 @@ async def order_episodes(client: Client, message: Message):
         episode_message = data["message"]
         filename = data["filename"]
 
-        # Temporarily download the file and send it back with the correct name
-        temp_file_path = await episode_message.download()
-
-        try:
-            # Rename and send the file with the original filename
-            correct_filename = filename
-            os.rename(temp_file_path, correct_filename)
-
-            # Send the renamed file
-            if episode_message.document:
-                await message.reply_document(
-                    document=correct_filename,
-                    caption=filename
-                )
-            elif episode_message.video:
-                await message.reply_video(
-                    video=correct_filename,
-                    caption=filename
-                )
-        finally:
-            # Clean up the file after sending
-            if os.path.exists(correct_filename):
-                os.remove(correct_filename)
+        # Send the file with the original filename as caption
+        if episode_message.document:
+            await message.reply_document(
+                document=episode_message.document.file_id,
+                caption=filename
+            )
+        elif episode_message.video:
+            await message.reply_video(
+                video=episode_message.video.file_id,
+                caption=filename
+            )
 
     # Clear episodes after sending
     episodes.clear()
