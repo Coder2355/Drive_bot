@@ -1,16 +1,15 @@
 from pyrogram import Client, filters
-from pyrogram.types import Message, InlineKeyboardMarkup, InlineKeyboardButton
+from pyrogram.types import Message
 import re
 
 from config import API_ID, API_HASH, BOT_TOKEN
-
 # Initialize bot
 bot = Client("episode_order_bot", api_id=API_ID, api_hash=API_HASH, bot_token=BOT_TOKEN)
 
 # Dictionary to temporarily store episode messages
 episode_storage = {}
 
-@bot.on_message(filters.private & filters.document & ~filters.command)
+@bot.on_message(filters.private & filters.document & ~filters.command())
 async def collect_episodes(client: Client, message: Message):
     user_id = message.from_user.id
     if user_id not in episode_storage:
