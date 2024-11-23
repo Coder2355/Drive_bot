@@ -15,18 +15,18 @@ async def receive_episode(client: Client, message: Message):
         await message.reply("Please send a valid video or document episode.")
         return
 
-    # Extract filename or caption as episode identifier
+    # Extract filename as episode identifier
     filename = message.document.file_name if message.document else message.video.file_name
 
-    # Try to extract the episode number from filename
+    # Try to extract the episode number from the filename
     try:
         episode_number = int("".join(filter(str.isdigit, filename.split()[0])))
     except ValueError:
         await message.reply("Could not determine episode number from the file name.")
         return
 
-    episodes[episode_number] = message
-    episodes[filename] = filename
+    # Store the message and filename in the dictionary
+    episodes[episode_number] = {"message": message, "filename": filename}
     await message.reply(f"Episode {episode_number} received.")
 
 @bot.on_message(filters.command("order_episode"))
@@ -36,19 +36,23 @@ async def order_episodes(client: Client, message: Message):
         await message.reply("No episodes received yet!")
         return
 
+    # Sort episodes by their episode number
     sorted_episodes = dict(sorted(episodes.items()))
-    filename = episodes[filename] 
 
-    for episode_number, episode_message in sorted_episodes.items():
-        # Send the episode file without altering its original name
+    for episode_number, data in sorted_episodes.items():
+        episode_message = data["message"]
+        filename = data["filename"]
+
+        # Send the episode file with the filename as the caption
         if episode_message.document:
             await message.reply_document(
                 document=episode_message.document.file_id,
-                caption=f"{filename}"
+                caption=filename
             )
         elif episode_message.video:
             await message.reply_video(
-                video=episode_message.video.file_id
+                video=episode_message.video.file_id,
+                caption=filename
             )
 
     # Clear episodes after sending
