@@ -41,13 +41,11 @@ async def order_episodes(client: Client, message: Message):
         # Send the episode file without altering its original name
         if episode_message.document:
             await message.reply_document(
-                document=episode_message.document.file_id,
-                caption=f"Episode {episode_number}"
+                document=episode_message.document.file_id
             )
         elif episode_message.video:
             await message.reply_video(
-                video=episode_message.video.file_id,
-                caption=f"Episode {episode_number}"
+                video=episode_message.video.file_id
             )
 
     # Clear episodes after sending
