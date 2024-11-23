@@ -20,7 +20,7 @@ async def collect_episodes(client: Client, message: Message):
         episode_storage[user_id] = []
     
     # Save the document message ID for reference
-    episode_storage[user_id].append((message.message_id, message.document.file_name))
+    episode_storage[user_id].append((message.id, message.document.file_name))
     await message.reply_text(f"Added: `{message.document.file_name}`\nSend `/order_episodes` to arrange them.", quote=True)
 
 @bot.on_message(filters.private & filters.command("order_episodes"))
