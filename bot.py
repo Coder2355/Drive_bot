@@ -1,7 +1,8 @@
 from pyrogram import Client, filters
-from pyrogram.types import Message, InlineKeyboardMarkup, InlineKeyboardButton
+from pyrogram.types import Message
 import os
-from aiofiles import open as aio_open
+
+# Initialize the bot
 from config import API_ID, API_HASH, BOT_TOKEN
 
 
@@ -11,7 +12,6 @@ app = Client(
     api_hash=API_HASH,
     bot_token=BOT_TOKEN,
 )
-
 # In-memory storage for received episodes
 episode_storage = {}
 
@@ -20,8 +20,7 @@ async def save_episode(file_id, file_name, episode_number):
     if not os.path.exists("episodes"):
         os.makedirs("episodes")
     file_path = f"episodes/{episode_number}_{file_name}"
-    async with aio_open(file_path, "wb") as file:
-        await app.download_media(file_id, file)
+    await app.download_media(file_id, file_path)
     return file_path
 
 # Handler for receiving episodes
