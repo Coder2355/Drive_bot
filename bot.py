@@ -17,17 +17,16 @@ async def receive_episode(client: Client, message: Message):
 
     # Extract filename or caption as episode identifier
     filename = message.document.file_name if message.document else message.video.file_name
-    identifier = filename or f"Episode {len(episodes) + 1}"
 
     # Try to extract the episode number from filename
     try:
-        episode_number = int("".join(filter(str.isdigit, filename)))
+        episode_number = int("".join(filter(str.isdigit, filename.split()[0])))
     except ValueError:
         await message.reply("Could not determine episode number from the file name.")
         return
 
     episodes[episode_number] = message
-    await message.reply(f"{identifier} received as Episode {episode_number:02d}.")
+    await message.reply(f"Episode {episode_number} received.")
 
 @bot.on_message(filters.command("order_episode"))
 async def order_episodes(client: Client, message: Message):
@@ -39,10 +38,17 @@ async def order_episodes(client: Client, message: Message):
     sorted_episodes = dict(sorted(episodes.items()))
 
     for episode_number, episode_message in sorted_episodes.items():
-        await message.reply_document(
-            document=episode_message.document.file_id if episode_message.document else episode_message.video.file_id,
-            caption=f"Episode {episode_number:02d}"
-        )
+        # Send the episode file without altering its original name
+        if episode_message.document:
+            await message.reply_document(
+                document=episode_message.document.file_id,
+                caption=f"Episode {episode_number}"
+            )
+        elif episode_message.video:
+            await message.reply_video(
+                video=episode_message.video.file_id,
+                caption=f"Episode {episode_number}"
+            )
 
     # Clear episodes after sending
     episodes.clear()
