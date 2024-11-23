@@ -26,6 +26,7 @@ async def receive_episode(client: Client, message: Message):
         return
 
     episodes[episode_number] = message
+    episodes[filename] = filename
     await message.reply(f"Episode {episode_number} received.")
 
 @bot.on_message(filters.command("order_episode"))
@@ -36,12 +37,14 @@ async def order_episodes(client: Client, message: Message):
         return
 
     sorted_episodes = dict(sorted(episodes.items()))
+    filename = episodes[filename] 
 
     for episode_number, episode_message in sorted_episodes.items():
         # Send the episode file without altering its original name
         if episode_message.document:
             await message.reply_document(
-                document=episode_message.document.file_id
+                document=episode_message.document.file_id,
+                caption=f"{filename}"
             )
         elif episode_message.video:
             await message.reply_video(
