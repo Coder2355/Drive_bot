@@ -9,7 +9,11 @@ bot = Client("episode_order_bot", api_id=API_ID, api_hash=API_HASH, bot_token=BO
 # Dictionary to temporarily store episode messages
 episode_storage = {}
 
-@bot.on_message(filters.private & filters.document & ~filters.command())
+# Custom filter to exclude command messages
+def is_not_command(_, __, message: Message):
+    return not message.text or not message.text.startswith("/")
+
+@bot.on_message(filters.private & filters.document & filters.create(is_not_command))
 async def collect_episodes(client: Client, message: Message):
     user_id = message.from_user.id
     if user_id not in episode_storage:
