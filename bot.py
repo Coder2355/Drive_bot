@@ -1,75 +1,63 @@
 from pyrogram import Client, filters
-from pyrogram.types import Message
-import os
+from pyrogram.types import Message, InlineKeyboardMarkup, InlineKeyboardButton
+import re
 
-# Initialize the bot
 from config import API_ID, API_HASH, BOT_TOKEN
 
+# Initialize bot
+bot = Client("episode_order_bot", api_id=API_ID, api_hash=API_HASH, bot_token=BOT_TOKEN)
 
-app = Client(
-    "EpisodeArrangerBot",
-    api_id=API_ID,
-    api_hash=API_HASH,
-    bot_token=BOT_TOKEN,
-)
-# In-memory storage for received episodes
+# Dictionary to temporarily store episode messages
 episode_storage = {}
 
-# Helper function to save episode
-async def save_episode(file_id, file_name, episode_number):
-    if not os.path.exists("episodes"):
-        os.makedirs("episodes")
-    file_path = f"episodes/{episode_number}_{file_name}"
-    await app.download_media(file_id, file_path)
-    return file_path
-
-# Handler for receiving episodes
-@app.on_message(filters.document | filters.video | filters.audio)
-async def receive_episode(client, message: Message):
+@bot.on_message(filters.private & filters.document & ~filters.command)
+async def collect_episodes(client: Client, message: Message):
     user_id = message.from_user.id
-    file_id = message.document.file_id if message.document else message.video.file_id if message.video else message.audio.file_id
-    file_name = message.document.file_name if message.document else message.video.file_name if message.video else message.audio.file_name
-    
     if user_id not in episode_storage:
         episode_storage[user_id] = []
+    
+    # Save the document message ID for reference
+    episode_storage[user_id].append((message.message_id, message.document.file_name))
+    await message.reply_text(f"Added: `{message.document.file_name}`\nSend `/order_episodes` to arrange them.", quote=True)
 
-    # Assign episode number
-    episode_number = len(episode_storage[user_id]) + 1
-
-    # Save episode metadata
-    file_path = await save_episode(file_id, file_name, episode_number)
-    episode_storage[user_id].append({"number": episode_number, "name": file_name, "path": file_path})
-
-    await message.reply_text(f"Episode {episode_number} received: {file_name}")
-
-# Handler for ordering episodes
-@app.on_message(filters.command("order_episodes"))
-async def order_episodes(client, message: Message):
+@bot.on_message(filters.private & filters.command("order_episodes"))
+async def order_episodes(client: Client, message: Message):
     user_id = message.from_user.id
-
     if user_id not in episode_storage or not episode_storage[user_id]:
-        await message.reply_text("No episodes received yet.")
+        await message.reply_text("No episodes found! Please send the episodes first.", quote=True)
         return
 
-    # Sort episodes by their number
-    episodes = sorted(episode_storage[user_id], key=lambda x: x["number"])
+    # Extract file names and sort them
+    episodes = episode_storage[user_id]
+    sorted_episodes = sorted(episodes, key=lambda x: extract_episode_number(x[1]))
 
-    # Send episodes back
-    for episode in episodes:
-        await message.reply_document(episode["path"], caption=f"Episode {episode['number']}: {episode['name']}")
+    # Prepare response message
+    response = "**Ordered Episodes:**\n"
+    for i, (_, file_name) in enumerate(sorted_episodes, start=1):
+        response += f"{i}. `{file_name}`\n"
 
-    # Clear storage for user after sending
-    del episode_storage[user_id]
+    # Send the ordered list
+    await message.reply_text(response)
 
-# Start command
-@app.on_message(filters.command("start"))
-async def start(client, message: Message):
+    # Reset storage for the user
+    episode_storage[user_id] = []
+
+def extract_episode_number(file_name):
+    """
+    Extracts the episode number from the file name using a regex.
+    If no number is found, returns a very high value to sort it at the end.
+    """
+    match = re.search(r"(\d+)", file_name)
+    return int(match.group(1)) if match else float("inf")
+
+@bot.on_message(filters.private & filters.command("start"))
+async def start(client: Client, message: Message):
     await message.reply_text(
-        "Welcome to the Episode Arranger Bot!\n\n"
-        "1. Send me episodes one by one.\n"
-        "2. Use /order_episodes to send all episodes back in order."
+        "Hello! I am an Episode Order Bot.\n\n"
+        "1. Send me all the episodes as document files.\n"
+        "2. Use the `/order_episodes` command to get them arranged in order.\n\n"
+        "Enjoy organizing your episodes effortlessly!"
     )
 
 # Run the bot
-if __name__ == "__main__":
-    app.run()
+bot.run()
