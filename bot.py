@@ -20,9 +20,6 @@ def download_torrent(torrent_link):
     params = {
         'save_path': DOWNLOAD_PATH,
         'storage_mode': lt.storage_mode_t.storage_mode_allocate,
-        'paused': False,
-        'auto_managed': True,
-        'duplicate_is_error': True
     }
 
     handle = lt.add_magnet_uri(session, torrent_link, params)
@@ -33,7 +30,7 @@ def download_torrent(torrent_link):
         time.sleep(1)
 
     print("Metadata downloaded. Starting torrent download.")
-    while handle.status().state != lt.torrent_status.seeding:
+    while not handle.is_seed():
         status = handle.status()
         print(f"\rProgress: {status.progress * 100:.2f}% | Download rate: {status.download_rate / 1000:.2f} kB/s | "
               f"Upload rate: {status.upload_rate / 1000:.2f} kB/s", end="")
