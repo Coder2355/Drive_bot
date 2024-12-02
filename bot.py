@@ -12,7 +12,7 @@ DOWNLOAD_PATH = "./downloads/"
 bot = Client("torrent_downloader", api_id=API_ID, api_hash=API_HASH, bot_token=BOT_TOKEN)
 
 def download_torrent(torrent_link):
-    """Download torrent file using the updated libtorrent methods."""
+    """Download torrent file using the updated libtorrent API."""
     session = lt.session()
     session.apply_settings({
         'listen_interfaces': '0.0.0.0:6881'
@@ -23,11 +23,10 @@ def download_torrent(torrent_link):
         'storage_mode': lt.storage_mode_t.storage_mode_allocate,
     }
 
-    # Add torrent
-    handle = lt.add_magnet_uri(session, torrent_link, params)
-
-    # Start DHT (enabled by default in newer versions, but we ensure it's on)
-    session.add_dht_router("router.utorrent.com", 6881)
+    # Use add_torrent_params for newer API
+    torrent_params = lt.parse_magnet_uri(torrent_link)
+    torrent_params.save_path = DOWNLOAD_PATH
+    handle = session.add_torrent(torrent_params)
 
     print("Downloading metadata...")
     while not handle.status().has_metadata:
@@ -67,8 +66,7 @@ async def torrent_download(_, message: Message):
     await message.reply("Starting torrent download...")
     try:
         handle = download_torrent(magnet_link)
-        torrent_info = handle.get_torrent_info()
-        file_name = torrent_info.files()[0].path
+        file_name = handle.status().name
         file_path = f"{DOWNLOAD_PATH}/{file_name}"
 
         await message.reply("Torrent downloaded successfully. Uploading to Telegram...")
