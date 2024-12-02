@@ -11,26 +11,30 @@ DOWNLOAD_PATH = "./downloads/"
 # Initialize the bot
 bot = Client("torrent_downloader", api_id=API_ID, api_hash=API_HASH, bot_token=BOT_TOKEN)
 
-
 def download_torrent(torrent_link):
-    """Download torrent file using libtorrent."""
+    """Download torrent file using the updated libtorrent methods."""
     session = lt.session()
-    session.listen_on(6881, 6891)
+    session.apply_settings({
+        'listen_interfaces': '0.0.0.0:6881'
+    })
 
     params = {
         'save_path': DOWNLOAD_PATH,
         'storage_mode': lt.storage_mode_t.storage_mode_allocate,
     }
 
+    # Add torrent
     handle = lt.add_magnet_uri(session, torrent_link, params)
-    session.start_dht()
+
+    # Start DHT (enabled by default in newer versions, but we ensure it's on)
+    session.add_dht_router("router.utorrent.com", 6881)
 
     print("Downloading metadata...")
-    while not handle.has_metadata():
+    while not handle.status().has_metadata:
         time.sleep(1)
 
     print("Metadata downloaded. Starting torrent download.")
-    while not handle.is_seed():
+    while not handle.status().is_seeding:
         status = handle.status()
         print(f"\rProgress: {status.progress * 100:.2f}% | Download rate: {status.download_rate / 1000:.2f} kB/s | "
               f"Upload rate: {status.upload_rate / 1000:.2f} kB/s", end="")
