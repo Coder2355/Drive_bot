@@ -1,49 +1,82 @@
-import os
-import subprocess
+import asyncio
+import libtorrent as lt
+import time
 from pyrogram import Client, filters
+from pyrogram.types import Message
 from config import API_ID, API_HASH, BOT_TOKEN
-from pyngrok import ngrok
 
-# Create download directory
-DOWNLOAD_DIR = "/content/downloads"
-os.makedirs(DOWNLOAD_DIR, exist_ok=True)
+# Config
+DOWNLOAD_PATH = "./downloads/"
 
-# Initialize Pyrogram client
-app = Client("torrent_leech_bot", api_id=API_ID, api_hash=API_HASH, bot_token=BOT_TOKEN)
+# Initialize the bot
+bot = Client("torrent_downloader", api_id=API_ID, api_hash=API_HASH, bot_token=BOT_TOKEN)
 
-@app.on_message(filters.text)
-async def torrent_handler(client, message):
-    if message.text.startswith("magnet:") or message.text.endswith(".torrent"):
-        await message.reply("Send `/torrent` to start leeching this link.", quote=True)
-        
-@app.on_message(filters.command("torrent"))
-async def start_torrent_download(client, message):
-    original_message = message.reply_to_message
 
-    if not original_message or not (original_message.text.startswith("magnet:") or original_message.text.endswith(".torrent")):
-        await message.reply("Reply to a valid magnet link or torrent file message with `/torrent`.")
+def download_torrent(torrent_link):
+    """Download torrent file using libtorrent."""
+    session = lt.session()
+    session.listen_on(6881, 6891)
+
+    params = {
+        'save_path': DOWNLOAD_PATH,
+        'storage_mode': lt.storage_mode_t.storage_mode_allocate,
+        'paused': False,
+        'auto_managed': True,
+        'duplicate_is_error': True
+    }
+
+    handle = lt.add_magnet_uri(session, torrent_link, params)
+    session.start_dht()
+
+    print("Downloading metadata...")
+    while not handle.has_metadata():
+        time.sleep(1)
+
+    print("Metadata downloaded. Starting torrent download.")
+    while handle.status().state != lt.torrent_status.seeding:
+        status = handle.status()
+        print(f"\rProgress: {status.progress * 100:.2f}% | Download rate: {status.download_rate / 1000:.2f} kB/s | "
+              f"Upload rate: {status.upload_rate / 1000:.2f} kB/s", end="")
+        time.sleep(1)
+
+    print("\nTorrent download completed!")
+    return handle
+
+
+async def upload_to_telegram(file_path, message: Message):
+    """Upload a file to Telegram with a progress bar."""
+    async def progress(current, total):
+        await message.edit_text(f"Uploading: {current * 100 / total:.1f}%")
+
+    await message.reply_document(file_path, progress=progress)
+
+
+@bot.on_message(filters.command("torrent") & filters.reply)
+async def torrent_download(_, message: Message):
+    """Handle the /torrent command."""
+    if not message.reply_to_message.text:
+        await message.reply("Please reply to a valid torrent magnet link.")
         return
 
-    torrent_link = original_message.text
+    magnet_link = message.reply_to_message.text.strip()
+    if not magnet_link.startswith("magnet:?"):
+        await message.reply("Invalid magnet link. Please provide a valid magnet link.")
+        return
+
     await message.reply("Starting torrent download...")
-
     try:
-        # Start downloading with aria2c
-        subprocess.run(
-            ["aria2c", "--dir", DOWNLOAD_DIR, torrent_link],
-            check=True
-        )
-        await message.reply("Torrent download complete! Uploading files...")
+        handle = download_torrent(magnet_link)
+        torrent_info = handle.get_torrent_info()
+        file_name = torrent_info.files()[0].path
+        file_path = f"{DOWNLOAD_PATH}/{file_name}"
 
-        for root, dirs, files in os.walk(DOWNLOAD_DIR):
-            for file in files:
-                file_path = os.path.join(root, file)
-                await client.send_document(message.chat.id, file_path)
+        await message.reply("Torrent downloaded successfully. Uploading to Telegram...")
+        await upload_to_telegram(file_path, message)
 
-        await message.reply("All files have been uploaded!")
-    except subprocess.CalledProcessError:
-        await message.reply("Failed to download the torrent.")
+    except Exception as e:
+        await message.reply(f"An error occurred: {e}")
 
-# Start the bot
+
 if __name__ == "__main__":
-    app.run()
+    print("Starting bot...")
+    bot.run()
