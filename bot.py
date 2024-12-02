@@ -11,11 +11,11 @@ os.makedirs(DOWNLOAD_DIR, exist_ok=True)
 # Initialize Pyrogram client
 app = Client("torrent_leech_bot", api_id=API_ID, api_hash=API_HASH, bot_token=BOT_TOKEN)
 
-@app.on_message(filters.text & ~filters.edited)
+@app.on_message(filters.text)
 async def torrent_handler(client, message):
     if message.text.startswith("magnet:") or message.text.endswith(".torrent"):
         await message.reply("Send `/torrent` to start leeching this link.", quote=True)
-
+        
 @app.on_message(filters.command("torrent"))
 async def start_torrent_download(client, message):
     original_message = message.reply_to_message
