@@ -30,7 +30,7 @@ async def set_poster(_, message: Message):
         photo=message.photo.file_id,
         caption="Poster image set successfully ✅"
     )
-    episode_data[user_id]["poster_msg_id"] = sent_poster.message_id
+    episode_data[user_id]["poster_msg_id"] = sent_poster.id  # Use .id instead of .message_id
     await message.reply_text("Poster image set successfully ✅", quote=True)
 
 @bot.on_message(filters.video | filters.document)
@@ -71,7 +71,7 @@ async def process_quality(message, user_id, anime_details, episodes, episode_key
     file_path = await message.download()
     await bot.edit_message_text(
         chat_id=TARGET_CHANNEL,
-        message_id=download_msg.message_id,
+        message_id=download_msg.id,  # Use .id instead of .message_id
         text=f"{quality} file downloaded successfully ✅"
     )
 
@@ -84,7 +84,7 @@ async def process_quality(message, user_id, anime_details, episodes, episode_key
     os.remove(file_path)
     await bot.edit_message_text(
         chat_id=TARGET_CHANNEL,
-        message_id=store_msg.message_id,
+        message_id=store_msg.id,  # Use .id instead of .message_id
         text=f"{quality} file uploaded to file store channel ✅"
     )
 
