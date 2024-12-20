@@ -23,6 +23,10 @@ async def start(_, message: Message):
 
 @bot.on_message(filters.photo)
 async def set_poster(_, message: Message):
+    if not message.from_user:
+        await message.reply_text("Could not identify the user. Make sure you are not sending from a channel or as an anonymous admin.", quote=True)
+        return
+    
     user_id = message.from_user.id
     episode_data[user_id] = {"poster": message.photo.file_id, "episodes": {}}
     sent_poster = await bot.send_photo(
@@ -96,35 +100,27 @@ async def process_quality(message, user_id, anime_details, episodes, episode_key
     episodes[episode_key]["qualities"][quality] = sharable_link
 
 async def update_poster_buttons(message, user_id, anime_details, episodes, episode_key):
-    # Get existing poster message ID
-    poster_id = episode_data[user_id]["poster"]
     poster_msg_id = episodes[episode_key]["poster_msg_id"]
-
-    # Generate updated buttons
-    qualities = episodes[episode_key]["qualities"]
-    buttons = [
-        [InlineKeyboardButton(q, url=link)] for q, link in qualities.items()
+    quality_buttons = [
+        InlineKeyboardButton(q, url=link)
+        for q, link in episodes[episode_key]["qualities"].items()
     ]
+    keyboard = InlineKeyboardMarkup([quality_buttons])
 
-    # Update or send the poster
     if poster_msg_id:
-        try:
-            await bot.edit_message_reply_markup(
-                chat_id=TARGET_CHANNEL,
-                message_id=poster_msg_id,
-                reply_markup=InlineKeyboardMarkup(buttons)
-            )
-        except Exception as e:
-            print(f"Failed to edit poster: {e}")
+        await bot.edit_message_reply_markup(
+            chat_id=TARGET_CHANNEL,
+            message_id=poster_msg_id,  # Use .id instead of .message_id
+            reply_markup=keyboard
+        )
     else:
         sent_poster = await bot.send_photo(
             chat_id=TARGET_CHANNEL,
-            photo=poster_id,
-            caption=f"**Anime Name:** {anime_details['name']}\n"
-                    f"**Episode:** {anime_details['episode']}",
-            reply_markup=InlineKeyboardMarkup(buttons)
+            photo=episode_data[user_id]["poster"],
+            caption=f"{anime_details['name']} - Episode {anime_details['episode']}",
+            reply_markup=keyboard
         )
-        episodes[episode_key]["poster_msg_id"] = sent_poster.message_id
+        episodes[episode_key]["poster_msg_id"] = sent_poster.id  # Use .id instead of .message_id
 
 def extract_anime_details(file_name: str) -> dict:
     # Example logic to extract details from filename
