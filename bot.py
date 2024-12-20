@@ -135,11 +135,20 @@ def extract_anime_details(file_name: str) -> dict:
         "quality": parts[2].replace(".mp4", "")
     }
 
-def generate_file_store_link(file_id: str) -> str:
-    # Generate a sharable link using base64 encoding
-    base_url = "https://t.me/"
+
+def generate_file_store_link(file_id):
+    """
+    Generate a sharable link using file_id encoded in Base64.
+    """
+    # Encode the file_id in Base64
     encoded_id = base64.urlsafe_b64encode(file_id.encode()).decode()
-    return f"{base_url}{encoded_id}"
+    
+    # Replace 'your_bot_username' with your bot's username
+    bot_username = "Rghkklljhhh_bot"
+    
+    # Construct the sharable link
+    sharable_link = f"https://t.me/{bot_username}?start={encoded_id}"
+    return sharable_link
 
 if __name__ == "__main__":
     bot.run()
