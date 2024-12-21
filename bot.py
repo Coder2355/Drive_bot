@@ -61,7 +61,7 @@ async def process_file(client, message: Message):
 
     # Upload to file store channel
     file_message = await client.send_document(chat_id=FILE_STORE_CHANNEL, document=file_path)
-    msg_id = file_message.message_id
+    msg_id = file_message.id
 
     # Generate link
     base64_string = await encode(f"get-{msg_id * abs(client.db_channel.id)}")
