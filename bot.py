@@ -6,6 +6,8 @@ from config import API_ID, API_HASH, BOT_TOKEN, FILE_STORE_CHANNEL, TARGET_CHANN
 import pyrogram.utils
 pyrogram.utils.MIN_CHANNEL_ID = -1009999999999
 
+
+
 app = Client("button_poster_bot", api_id=API_ID, api_hash=API_HASH, bot_token=BOT_TOKEN)
 
 # Global Variables
@@ -101,10 +103,10 @@ async def start(client, message):
         try:
             # Decode the file ID
             file_id = base64.urlsafe_b64decode(encoded_file_id + "=" * (-len(encoded_file_id) % 4)).decode()
-            # Send the file
-            await message.reply_document(file_id)
+            # Send the file to the user
+            await client.send_document(message.chat.id, file_id)
         except Exception as e:
-            await message.reply_text(f"Error: {str(e)}")
+            await message.reply_text("The file could not be retrieved. It may have been deleted.")
     else:
         await message.reply_text("Welcome! Send a file to use the bot.")
 
