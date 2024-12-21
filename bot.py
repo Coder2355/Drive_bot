@@ -12,7 +12,7 @@ from pyrogram.types import (
     InlineKeyboardMarkup,
     InlineKeyboardButton,
 )
-from config import API_ID, API_HASH, BOT_TOKEN, FILE_STORE_CHANNEL
+from config import API_ID, API_HASH, BOT_TOKEN, FILE_STORE_CHANNEL, TARGET_CHANNEL
 
 app = Client("button_poster_bot", api_id=API_ID, api_hash=API_HASH, bot_token=BOT_TOKEN)
 
@@ -161,7 +161,7 @@ async def process_file(client: Client, message: Message):
         return
 
     anime_name, episode, quality = parts[0], parts[1], parts[2].split(".")[0]
-    target_channel = FILE_STORE_CHANNEL
+    target_channel = TARGET_CHANNEL
 
     # Send poster with buttons
     buttons = POSTERS.get(anime_name, [])
@@ -174,7 +174,7 @@ async def process_file(client: Client, message: Message):
     )
 
     await client.send_photo(
-        chat_id=target_channel,
+        chat_id=TARGET_CHANNEL,
         photo=POSTER,
         caption=f"Anime: {anime_name}\nEpisode: {episode}\nQuality: {quality}",
         reply_markup=markup,
