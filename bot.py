@@ -104,9 +104,10 @@ async def start(client, message):
             # Decode the file ID
             file_id = base64.urlsafe_b64decode(encoded_file_id + "=" * (-len(encoded_file_id) % 4)).decode()
             # Send the file to the user
+            await message.reply_text("Fetching your file, please wait...")
             await client.send_document(message.chat.id, file_id)
         except Exception as e:
-            await message.reply_text("The file could not be retrieved. It may have been deleted.")
+            await message.reply_text(f"Error: {e}\nThe file could not be retrieved. It may have been deleted.")
     else:
         await message.reply_text("Welcome! Send a file to use the bot.")
 
