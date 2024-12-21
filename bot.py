@@ -1,160 +1,100 @@
-from pyrogram import Client, filters
-from pyrogram.types import Message, InlineKeyboardMarkup, InlineKeyboardButton
-import os
+import asyncio
+import re
 import base64
-
-import pyrogram.utils
-pyrogram.utils.MIN_CHANNEL_ID = -1009999999999
-
+from pyrogram import Client, filters
+from pyrogram.types import InlineKeyboardMarkup, InlineKeyboardButton, Message
 from config import API_ID, API_HASH, BOT_TOKEN, FILE_STORE_CHANNEL, TARGET_CHANNEL
 
-bot = Client("video_uploader_bot", api_id=API_ID, api_hash=API_HASH, bot_token=BOT_TOKEN)
+app = Client("button_poster_bot", api_id=API_ID, api_hash=API_HASH, bot_token=BOT_TOKEN)
 
-# Dictionary to store episode data and uploaded qualities
-episode_data = {}
+poster = None  # Global variable to store the poster image
 
-@bot.on_message(filters.command("start") & filters.private)
-async def start(bot, message):
-    if len(message.command) > 1:
-        # Extract the encoded file ID from the start parameter
-        encoded_id = message.command[1]
-        try:
-            # Decode the file ID
-            file_id = base64.urlsafe_b64decode(encoded_id).decode()
-            
-            # Retrieve the file from file store
-            file_msg = await bot.get_messages(FILE_STORE_CHANNEL, message_id=file_id)
-            if file_msg.document:
-                # Send the file to the user
-                await bot.send_document(
-                    chat_id=message.chat.id,
-                    document=file_msg.document.file_id
-                )
-            else:
-                await message.reply_text("File not found.")
-        except Exception as e:
-            await message.reply_text("Invalid link or file not found.")
-    else:
-        await message.reply_text("Welcome to the bot! Send a video to begin.")
+# Base64 Encoding and Decoding
+async def encode(string):
+    string_bytes = string.encode("ascii")
+    base64_bytes = base64.urlsafe_b64encode(string_bytes)
+    return (base64_bytes.decode("ascii")).strip("=")
 
-@bot.on_message(filters.photo)
-async def set_poster(_, message: Message):
-    if not message.from_user:
-        await message.reply_text("Could not identify the user. Make sure you are not sending from a channel or as an anonymous admin.", quote=True)
+async def decode(base64_string):
+    base64_string = base64_string.strip("=")
+    base64_bytes = (base64_string + "=" * (-len(base64_string) % 4)).encode("ascii")
+    string_bytes = base64.urlsafe_b64decode(base64_bytes)
+    return string_bytes.decode("ascii")
+
+@app.on_message(filters.photo & filters.private)
+async def set_poster(client, message: Message):
+    global poster
+    poster = message.photo.file_id
+    await message.reply("Poster added successfully ✅")
+
+@app.on_message(filters.video | filters.document & filters.private)
+async def process_file(client, message: Message):
+    global poster
+    if not poster:
+        await message.reply("❌ Please set a poster first by sending a photo.")
         return
+
+    # Extract file details
+    file_name = message.document.file_name if message.document else message.video.file_name
+    anime_name, episode, quality = extract_details(file_name)
     
-    user_id = message.from_user.id
-    episode_data[user_id] = {"poster": message.photo.file_id, "episodes": {}}
-    sent_poster = await bot.send_photo(
-        chat_id=TARGET_CHANNEL,
-        photo=message.photo.file_id,
-        caption="Poster image set successfully ✅"
-    )
-    episode_data[user_id]["poster_msg_id"] = sent_poster.id  # Use .id instead of .message_id
-    await message.reply_text("Poster image set successfully ✅", quote=True)
-
-@bot.on_message(filters.video | filters.document)
-async def process_video(_, message: Message):
-    user_id = message.from_user.id
-    if user_id not in episode_data or "poster" not in episode_data[user_id]:
-        await message.reply_text("Please send a poster image first.", quote=True)
+    if not (anime_name and episode and quality):
+        await message.reply("❌ Could not extract details from the file name.")
         return
 
-    # Extract details from the video filename
-    file_name = message.video.file_name if message.video else message.document.file_name
-    anime_details = extract_anime_details(file_name)
-
-    # Check if the episode already exists
-    episodes = episode_data[user_id]["episodes"]
-    episode_key = f"{anime_details['name']}_Ep{anime_details['episode']}"
-    if episode_key not in episodes:
-        episodes[episode_key] = {"qualities": {}, "poster_msg_id": None}
-
-    # Check if the quality already exists
-    quality = anime_details["quality"]
-    if quality in episodes[episode_key]["qualities"]:
-        await message.reply_text(f"{quality} already uploaded for this episode.", quote=True)
-        return
-
-    # Download and process the video
-    await process_quality(message, user_id, anime_details, episodes, episode_key)
-
-    # Update the poster with the new button
-    await update_poster_buttons(message, user_id, anime_details, episodes, episode_key)
-
-async def process_quality(message, user_id, anime_details, episodes, episode_key):
-    quality = anime_details["quality"]
-    download_msg = await bot.send_message(
+    # Send poster with details to the target channel
+    buttons = [[InlineKeyboardButton(f"{quality}p", callback_data=f"get_link_{quality}")]]
+    caption = f"**Anime Name:** {anime_name}\n**Episode:** {episode}\n**Quality:** {quality}p"
+    await client.send_photo(
         chat_id=TARGET_CHANNEL,
-        text=f"Downloading {quality} file..."
+        photo=poster,
+        caption=caption,
+        reply_markup=InlineKeyboardMarkup(buttons)
     )
+    await message.reply(f"Downloading the {quality} file...")
+
+    # Download file
     file_path = await message.download()
-    await bot.edit_message_text(
-        chat_id=TARGET_CHANNEL,
-        message_id=download_msg.id,  # Use .id instead of .message_id
-        text=f"{quality} file downloaded successfully ✅"
-    )
 
-    # Upload file to file store channel
-    store_msg = await bot.send_message(
-        chat_id=TARGET_CHANNEL,
-        text=f"Uploading {quality} file to file store channel..."
-    )
-    sent_message = await bot.send_document(FILE_STORE_CHANNEL, file_path)
-    os.remove(file_path)
-    await bot.edit_message_text(
-        chat_id=TARGET_CHANNEL,
-        message_id=store_msg.id,  # Use .id instead of .message_id
-        text=f"{quality} file uploaded to file store channel ✅"
-    )
+    # Upload to file store channel
+    file_message = await client.send_document(chat_id=FILE_STORE_CHANNEL, document=file_path)
+    msg_id = file_message.message_id
 
-    # Generate sharable link
-    file_id = sent_message.document.file_id
-    sharable_link = generate_file_store_link(file_id)
+    # Generate link
+    base64_string = await encode(f"get-{msg_id * abs(client.db_channel.id)}")
+    link = f"https://t.me/{client.username}?start={base64_string}"
 
-    # Store the link
-    episodes[episode_key]["qualities"][quality] = sharable_link
+    # Update poster with additional quality buttons
+    await update_poster(client, anime_name, episode, quality, link)
 
-async def update_poster_buttons(message, user_id, anime_details, episodes, episode_key):
-    poster_msg_id = episodes[episode_key]["poster_msg_id"]
-    quality_buttons = [
-        InlineKeyboardButton(q, url=link)
-        for q, link in episodes[episode_key]["qualities"].items()
-    ]
-    keyboard = InlineKeyboardMarkup([quality_buttons])
+    await message.reply(f"Uploading the {quality} file completed ✅")
 
-    if poster_msg_id:
-        await bot.edit_message_reply_markup(
-            chat_id=TARGET_CHANNEL,
-            message_id=poster_msg_id,  # Use .id instead of .message_id
-            reply_markup=keyboard
-        )
-    else:
-        sent_poster = await bot.send_photo(
-            chat_id=TARGET_CHANNEL,
-            photo=episode_data[user_id]["poster"],
-            caption=f"{anime_details['name']} - Episode {anime_details['episode']}",
-            reply_markup=keyboard
-        )
-        episodes[episode_key]["poster_msg_id"] = sent_poster.id  # Use .id instead of .message_id
+async def update_poster(client, anime_name, episode, quality, link):
+    messages = await client.get_messages(chat_id=TARGET_CHANNEL)
+    for msg in messages:
+        if anime_name in msg.caption and f"Episode: {episode}" in msg.caption:
+            buttons = msg.reply_markup.inline_keyboard
+            new_button = InlineKeyboardButton(f"{quality}p", url=link)
+            buttons.append([new_button])
+            await msg.edit_reply_markup(reply_markup=InlineKeyboardMarkup(buttons))
+            break
 
-def extract_anime_details(file_name: str) -> dict:
-    # Example logic to extract details from filename
-    parts = file_name.split("_")
-    return {
-        "name": parts[0].replace("-", " ").title(),
-        "episode": parts[1].replace("Ep", ""),
-        "quality": parts[2].replace(".mp4", "")
-    }
+def extract_details(file_name):
+    try:
+        parts = file_name.split("-")
+        anime_name = parts[0].strip()
+        episode = re.search(r"E(\d+)", parts[1]).group(1)
+        quality = re.search(r"(\d+)p", parts[2]).group(1)
+        return anime_name, episode, quality
+    except:
+        return None, None, None
 
-def generate_file_store_link(file_id):
-    """
-    Generate a sharable link using file_id encoded in Base64.
-    """
-    encoded_id = base64.urlsafe_b64encode(file_id.encode()).decode()
-    bot_username = "Rghkklljhhh_bot"  # Replace with your bot's username
-    sharable_link = f"https://t.me/{bot_username}?start={encoded_id}"
-    return sharable_link
+@app.on_callback_query()
+async def handle_callback(client, callback_query):
+    data = callback_query.data
+    if data.startswith("get_link_"):
+        quality = data.split("_")[2]
+        await callback_query.message.reply(f"Here is your {quality}p file link: {callback_query.message.reply_markup.inline_keyboard[0][0].url}")
 
 if __name__ == "__main__":
-    bot.run()
+    app.run()
