@@ -33,11 +33,6 @@ async def process_file(client, message):
         await message.reply_text("Failed to extract details. Make sure the file name is properly formatted.")
         return
 
-    # Prepare episode data and update buttons
-    key = f"{anime_name}_EP{episode_number}"
-    if key not in episode_data:
-        episode_data[key] = {"anime_name": anime_name, "episode_number": episode_number, "qualities": {}}
-
     # Notify download
     await client.send_message(TARGET_CHANNEL, f"Downloading {quality} file...")
 
@@ -53,8 +48,16 @@ async def process_file(client, message):
     file_id = sent_message.document.file_id
     link = base64.urlsafe_b64encode(file_id.encode()).decode()
 
+    # Fetch bot's username
+    bot_info = await client.get_me()
+    bot_username = bot_info.username
+
     # Save the link and update qualities
-    episode_data[key]["qualities"][quality] = f"https://t.me/{client.username}?start={link}"
+    key = f"{anime_name}_EP{episode_number}"
+    if key not in episode_data:
+        episode_data[key] = {"anime_name": anime_name, "episode_number": episode_number, "qualities": {}}
+    
+    episode_data[key]["qualities"][quality] = f"https://t.me/{bot_username}?start={link}"
     buttons = [
         InlineKeyboardButton(
             f"{q}p", url=episode_data[key]["qualities"][q]
@@ -69,6 +72,7 @@ async def process_file(client, message):
         f"**Available Qualities:** {', '.join(sorted(episode_data[key]['qualities']))}"
     )
     await client.send_photo(TARGET_CHANNEL, poster_image, caption=caption, reply_markup=keyboard)
+    
 
 @app.on_message(filters.command("start") & filters.private)
 async def start(client, message):
