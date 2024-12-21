@@ -4,6 +4,9 @@ import base64
 from pyrogram import Client, filters
 from pyrogram.types import InlineKeyboardMarkup, InlineKeyboardButton, Message
 from config import API_ID, API_HASH, BOT_TOKEN, FILE_STORE_CHANNEL, TARGET_CHANNEL
+import pyrogram.utils
+pyrogram.utils.MIN_CHANNEL_ID = -1009999999999
+
 
 app = Client("button_poster_bot", api_id=API_ID, api_hash=API_HASH, bot_token=BOT_TOKEN)
 
