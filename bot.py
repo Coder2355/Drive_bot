@@ -64,7 +64,7 @@ async def process_file(client, message: Message):
     msg_id = file_message.id
 
     # Generate link
-    base64_string = await encode(f"get-{msg_id * abs(client.FILE_STORE_CHANNEL.id)}")
+    base64_string = await encode(f"get-{msg_id * abs(client.FILE_STORE_CHANNEL_id)}")
     link = f"https://t.me/{client.username}?start={base64_string}"
 
     # Update poster with additional quality buttons
