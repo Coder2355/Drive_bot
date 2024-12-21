@@ -62,10 +62,16 @@ async def process_file(client, message: Message):
     # Upload to file store channel
     file_message = await client.send_document(chat_id=FILE_STORE_CHANNEL, document=file_path)
     msg_id = file_message.id
+    file_store_channel_id = client.FILE_STORE_CHANNEL
 
     # Generate link
-    base64_string = await encode(f"get-{msg_id * abs(client.FILE_STORE_CHANNEL_id)}")
+    base64_string = await encode(f"get-{msg_id * abs(file_store_channel_id)}")
     link = f"https://t.me/{client.username}?start={base64_string}"
+    
+    await client.send_message(
+        chat_id=file_store_channel_id,
+        text=f"Processing file with ID: {msg_id}"
+    )
 
     # Update poster with additional quality buttons
     await update_poster(client, anime_name, episode, quality, link)
