@@ -1,23 +1,39 @@
+import os
+import base64
 from pyrogram import Client, filters
 from pyrogram.types import InlineKeyboardMarkup, InlineKeyboardButton
-import base64
-import os
 from config import API_ID, API_HASH, BOT_TOKEN, FILE_STORE_CHANNEL, TARGET_CHANNEL
 import pyrogram.utils
 pyrogram.utils.MIN_CHANNEL_ID = -1009999999999
 
-
 app = Client("button_poster_bot", api_id=API_ID, api_hash=API_HASH, bot_token=BOT_TOKEN)
 
+# Global Variables
 poster_image = None
 episode_data = {}
 
+
+# Utility Function: Parse File Details
+def parse_details(file_name):
+    try:
+        parts = file_name.rsplit(".", 1)[0].split("-")
+        anime_name = parts[0].strip()
+        episode_number = parts[1].strip().replace("EP", "")
+        quality = parts[2].strip().replace("p", "")
+        return anime_name, episode_number, quality
+    except:
+        return None, None, None
+
+
+# Poster Image Handler
 @app.on_message(filters.photo & filters.private)
-async def add_poster(client, message):
+async def set_poster(client, message):
     global poster_image
-    poster_image = message.photo.file_id
+    poster_image = await message.download()
     await message.reply_text("Poster image added successfully ✅")
 
+
+# File Handler
 @app.on_message(filters.video | filters.document & filters.private)
 async def process_file(client, message):
     global poster_image, episode_data
@@ -46,18 +62,21 @@ async def process_file(client, message):
 
     # Generate base64 link
     file_id = sent_message.document.file_id
-    link = base64.urlsafe_b64encode(file_id.encode()).decode()
+    encoded_file_id = base64.urlsafe_b64encode(file_id.encode()).decode().strip("=")
 
     # Fetch bot's username
     bot_info = await client.get_me()
     bot_username = bot_info.username
+
+    # Generate the correct link
+    download_link = f"https://t.me/{bot_username}?start={encoded_file_id}"
 
     # Save the link and update qualities
     key = f"{anime_name}_EP{episode_number}"
     if key not in episode_data:
         episode_data[key] = {"anime_name": anime_name, "episode_number": episode_number, "qualities": {}}
     
-    episode_data[key]["qualities"][quality] = f"https://t.me/{bot_username}?start={link}"
+    episode_data[key]["qualities"][quality] = download_link
     buttons = [
         InlineKeyboardButton(
             f"{q}p", url=episode_data[key]["qualities"][q]
@@ -72,34 +91,25 @@ async def process_file(client, message):
         f"**Available Qualities:** {', '.join(sorted(episode_data[key]['qualities']))}"
     )
     await client.send_photo(TARGET_CHANNEL, poster_image, caption=caption, reply_markup=keyboard)
-    
 
+
+# Start Command Handler
 @app.on_message(filters.command("start") & filters.private)
 async def start(client, message):
     if len(message.command) > 1:
         encoded_file_id = message.command[1]
         try:
-            file_id = base64.urlsafe_b64decode(encoded_file_id).decode()
+            # Decode the file ID
+            file_id = base64.urlsafe_b64decode(encoded_file_id + "=" * (-len(encoded_file_id) % 4)).decode()
+            # Send the file
             await message.reply_document(file_id)
-        except Exception:
-            await message.reply_text("Invalid file link.")
+        except Exception as e:
+            await message.reply_text(f"Error: {str(e)}")
     else:
-        await message.reply_text("Welcome! Use this bot to manage anime uploads.")
+        await message.reply_text("Welcome! Send a file to use the bot.")
 
-def parse_details(file_name):
-    """
-    Parse anime details from file name.
-    Expected format: AnimeName_EpisodeNumber_Quality.ext
-    Example: Naruto_01_720p.mp4
-    """
-    try:
-        parts = file_name.split("_")
-        anime_name = parts[0]
-        episode_number = parts[1].replace("EP", "").strip()
-        quality = parts[2].split(".")[0]
-        return anime_name, episode_number, quality
-    except IndexError:
-        return None, None, None
 
+# Run the Bot
 if __name__ == "__main__":
+    print("Bot is running...")
     app.run()
