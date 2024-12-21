@@ -198,7 +198,7 @@ async def process_file(client: Client, message: Message):
     converted_id = post_message.id * abs(db_channel.id)
     string = f"get-{converted_id}"
     base64_string = await encode(string)
-    link = f"https://t.me/{client.username}?start={base64_string}"
+    link = f"https://t.me/Rghkklljhhh_bot?start={base64_string}"
 
     # Update poster with link
     await client.send_message(target_channel, f"Uploading {quality} file completed!\nFile link: {link}")
