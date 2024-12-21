@@ -65,7 +65,7 @@ async def process_file(client, message: Message):
 
     # Generate link
     base64_string = await encode(f"get-{msg_id * abs(FILE_STORE_CHANNEL)}")
-    link = f"https://t.me/{client.username}?start={base64_string}"
+    link = f"https://t.me/Rghkklljhhh_bot?start={base64_string}"
     
     # Update poster with additional quality buttons
     await update_poster(client, anime_name, episode, quality, link)
