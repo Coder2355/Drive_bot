@@ -48,7 +48,7 @@ async def process_file(client, message: Message):
     # Send poster with details to the target channel
     buttons = [[InlineKeyboardButton(f"{quality}p", callback_data=f"get_link_{quality}")]]
     caption = f"**Anime Name:** {anime_name}\n**Episode:** {episode}\n**Quality:** {quality}p"
-    await client.send_photo(
+    sent_msg = await client.send_photo(
         chat_id=TARGET_CHANNEL,
         photo=poster,
         caption=caption,
@@ -65,22 +65,19 @@ async def process_file(client, message: Message):
 
     # Generate link
     base64_string = await encode(f"get-{msg_id * abs(FILE_STORE_CHANNEL)}")
-    link = f"https://t.me/Rghkklljhhh_bot?start={base64_string}"
+    link = f"https://t.me/{client.username}?start={base64_string}"
     
-    await client.send_message(
-        chat_id=FILE_STORE_CHANNEL,
-        text=f"Processing file with ID: {msg_id}"
-    )
-
     # Update poster with additional quality buttons
     await update_poster(client, anime_name, episode, quality, link)
 
     await message.reply(f"Uploading the {quality} file completed ✅")
+
+
 async def update_poster(client, anime_name, episode, quality, link):
-    messages = await client.get_messages(chat_id=TARGET_CHANNEL)
-    for msg in messages:
-        if anime_name in msg.caption and f"Episode: {episode}" in msg.caption:
-            buttons = msg.reply_markup.inline_keyboard
+    # Use search_messages to locate the message in the channel
+    async for msg in client.search_messages(chat_id=TARGET_CHANNEL, query=anime_name, limit=10):
+        if f"Episode: {episode}" in (msg.caption or ""):
+            buttons = msg.reply_markup.inline_keyboard if msg.reply_markup else []
             new_button = InlineKeyboardButton(f"{quality}p", url=link)
             buttons.append([new_button])
             await msg.edit_reply_markup(reply_markup=InlineKeyboardMarkup(buttons))
