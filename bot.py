@@ -50,7 +50,19 @@ async def handle_file(client, message: Message):
 
 @app.on_message(filters.command("start") & filters.private)
 async def start(client, message: Message):
-    await message.reply_text("Welcome! Send me a file, and I'll generate a direct download link for you.")
+    # Check if a file ID is provided in the start command
+    if len(message.command) > 1:
+        file_id = message.command[1]  # Extract the file ID from the start command
+        try:
+            # Retrieve the file from the file store channel
+            await message.reply_document(
+                document=file_id,
+                caption="Here is your requested file!"
+            )
+        except Exception as e:
+            await message.reply_text(f"An error occurred: {str(e)}")
+    else:
+        await message.reply_text("Welcome! Send me a file, and I'll generate a direct download link for you.")
 
 
 if __name__ == "__main__":
