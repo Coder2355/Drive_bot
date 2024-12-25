@@ -32,7 +32,7 @@ async def handle_file(client, message: Message):
         
         # Generate a direct download link
         file_id = sent_message.document.file_id
-        file_link = f"https://t.me/{app.username}?start=file_{file_id}"
+        file_link = f"https://t.me/Rghkklljhhh_bot?start=file_{file_id}"
 
         # Notify the user and provide the link
         await message.reply_text(
