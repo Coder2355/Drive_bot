@@ -7,6 +7,7 @@ from config import API_ID, API_HASH, BOT_TOKEN, FILE_STORE_CHANNEL
 
 
 
+
 app = Client("fileSendBot", bot_token=BOT_TOKEN, api_id=API_ID, api_hash=API_HASH)
 
 
@@ -31,8 +32,10 @@ async def handle_file(client: Client, message: Message):
         # Forward the file to the file store channel
         forwarded_msg = await message.forward(FILE_STORE_CHANNEL)
 
-        # Generate an encoded link for the file
-        encoded_link = encode_file_link(forwarded_msg.chat.id, forwarded_msg.message_id)
+        # Use the correct attribute for message ID
+        encoded_link = encode_file_link(forwarded_msg.chat.id, forwarded_msg.id)
+
+        # Get bot's username for generating the link
         bot_username = (await client.get_me()).username
         file_link = f"https://t.me/{bot_username}?start={encoded_link}"
 
