@@ -3,7 +3,6 @@ from pyrogram import Client, filters
 from pyrogram.types import Message
 import pyrogram.utils
 pyrogram.utils.MIN_CHANNEL_ID = -1009999999999
-
 from config import API_ID, API_HASH, BOT_TOKEN, FILE_STORE_CHANNEL
 
 app = Client("FileStreamBot", api_id=API_ID, api_hash=API_HASH, bot_token=BOT_TOKEN)
@@ -55,12 +54,13 @@ async def start(client, message: Message):
         file_id = message.command[1]  # Extract the file ID from the start command
         try:
             # Retrieve the file from the file store channel
+            await message.reply_text("Fetching your file...")
             await message.reply_document(
                 document=file_id,
                 caption="Here is your requested file!"
             )
         except Exception as e:
-            await message.reply_text(f"An error occurred: {str(e)}")
+            await message.reply_text(f"Failed to retrieve the file. Error: {str(e)}")
     else:
         await message.reply_text("Welcome! Send me a file, and I'll generate a direct download link for you.")
 
