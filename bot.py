@@ -1,3 +1,4 @@
+
 import base64
 from pyrogram import Client, filters
 from pyrogram.types import InlineKeyboardMarkup, InlineKeyboardButton
@@ -59,37 +60,38 @@ async def handle_media(client, message):
     # Generate a download link for the forwarded file
     link = f"https://t.me/{STORE_CHANNEL}/{file_id}?id={encoded_id}"
 
-    # Add link to the episode dictionary
-    if episode not in EPISODE_LINKS:
-        EPISODE_LINKS[episode] = {}
-
-    # Detect quality and add link
+    # Detect quality from caption
+    quality = None
     if "480p" in message.caption:
-        EPISODE_LINKS[episode]["480p"] = link
+        quality = "480p"
     elif "720p" in message.caption:
-        EPISODE_LINKS[episode]["720p"] = link
+        quality = "720p"
     elif "1080p" in message.caption:
-        EPISODE_LINKS[episode]["1080p"] = link
-    else:
+        quality = "1080p"
+
+    if not quality:
         await message.reply_text("Please include quality (480p, 720p, 1080p) in the caption.")
         return
 
-    # Create buttons
-    buttons = []
-    if "480p" in EPISODE_LINKS[episode]:
-        buttons.append(InlineKeyboardButton("480p", url=EPISODE_LINKS[episode]["480p"]))
-    if "720p" in EPISODE_LINKS[episode]:
-        buttons.append(InlineKeyboardButton("720p", url=EPISODE_LINKS[episode]["720p"]))
-    if "1080p" in EPISODE_LINKS[episode]:
-        buttons.append(InlineKeyboardButton("1080p", url=EPISODE_LINKS[episode]["1080p"]))
+    # Update episode links
+    if episode not in EPISODE_LINKS:
+        EPISODE_LINKS[episode] = {}
+    EPISODE_LINKS[episode][quality] = link
 
-    # Send to the target channel
-    await client.send_photo(
-        TARGET_CHANNEL,
-        photo=POSTER,
-        caption=f"Anime: You are MS Servant\nSeason: 01\nEpisode: {episode}\nLanguage: Tamil",
-        reply_markup=InlineKeyboardMarkup([buttons]),
-    )
+    # Create buttons dynamically based on available qualities
+    buttons = []
+    for q in ["480p", "720p", "1080p"]:
+        if q in EPISODE_LINKS[episode]:
+            buttons.append(InlineKeyboardButton(q, url=EPISODE_LINKS[episode][q]))
+
+    # Send or edit the post in the target channel
+    if len(buttons) > 0:
+        await client.send_photo(
+            TARGET_CHANNEL,
+            photo=POSTER,
+            caption=f"Anime: You are MS Servant\nSeason: 01\nEpisode: {episode}\nQuality: {', '.join(EPISODE_LINKS[episode].keys())}\nLanguage: Tamil",
+            reply_markup=InlineKeyboardMarkup([buttons]),
+        )
 
     await message.reply_text("Episode posted successfully ✅")
 
