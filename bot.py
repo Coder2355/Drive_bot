@@ -1,126 +1,98 @@
 import base64
-import re
 from pyrogram import Client, filters
+from pyrogram.types import InlineKeyboardMarkup, InlineKeyboardButton
 import pyrogram.utils
 pyrogram.utils.MIN_CHANNEL_ID = -1009999999999
 from config import API_ID, API_HASH, BOT_TOKEN, FILE_STORE_CHANNEL, TARGET_CHANNEL
+# Bot configuration
+
+# Channel IDs
+STORE_CHANNEL = FILE_STORE_CHANNEL  # Replace with your store channel ID
+
+# Initialize the bot
+app = Client("bot", api_id=API_ID, api_hash=API_HASH, bot_token=BOT_TOKEN)
+
+# Global dictionary to store episode links and poster
+POSTER = None
+EPISODE_LINKS = {}
 
 
-from pyrogram.types import InlineKeyboardButton, InlineKeyboardMarkup, Message
+# Helper to encode file ID
+def encode_file_id(file_id):
+    return base64.urlsafe_b64encode(file_id.encode()).decode()
 
 
-app = Client("animeUploadBot", bot_token=BOT_TOKEN, api_id=API_ID, api_hash=API_HASH)
-
-# Data to store posters and quality-based links
-posters = {}  # {user_id: poster_file_id}
-posts = {}  # {(anime_name, episode_number): target_message_id}
-
-
-def encode_file_link(channel_id: int, message_id: int) -> str:
-    """Encode the file link into a Base64 string."""
-    data = f"{channel_id}:{message_id}"
-    return base64.urlsafe_b64encode(data.encode()).decode()
-
-
-def decode_file_link(encoded_data: str) -> tuple:
-    """Decode the Base64 string back into channel_id and message_id."""
-    data = base64.urlsafe_b64decode(encoded_data.encode()).decode()
-    return tuple(map(int, data.split(":")))
-
-
-def extract_file_details(file_name: str):
-    """Extract anime name, episode number, and quality from the file name."""
-    match = re.match(r"(.+)\s[Ee]p?\s?(\d+).*(\d{3,4}p)", file_name)
-    if match:
-        anime_name = match.group(1).strip()
-        episode_number = int(match.group(2))
-        quality = match.group(3)
-        return anime_name, episode_number, quality
-    return None, None, None
-
-
-@app.on_message(filters.private & filters.photo)
-async def set_poster(client: Client, message: Message):
-    """Set poster for the anime."""
-    posters[message.from_user.id] = message.photo.file_id
+# Handle poster upload
+@app.on_message(filters.photo & ~filters.channel)
+async def handle_poster(client, message):
+    global POSTER
+    POSTER = message.photo.file_id
     await message.reply_text("Poster added successfully ✅")
 
 
-@app.on_message(filters.private & (filters.document | filters.video))
-async def handle_file(client: Client, message: Message):
-    """Handle video or document files."""
-    if message.from_user.id not in posters:
-        await message.reply_text("Please send a poster first.")
+# Handle video and document upload
+@app.on_message((filters.video | filters.document) & ~filters.channel)
+async def handle_media(client, message):
+    global POSTER
+
+    if POSTER is None:
+        await message.reply_text("Please upload a poster first by sending a photo.")
         return
 
-    # Extract details from the filename
-    file_name = message.document.file_name if message.document else message.video.file_name
-    anime_name, episode_number, quality = extract_file_details(file_name)
-
-    if not all([anime_name, episode_number, quality]):
-        await message.reply_text("Could not extract details. Ensure the filename contains 'Anime Name Ep X Quality'.")
+    # Extract episode info from caption (e.g., "Episode : 10")
+    if not message.caption or "Episode :" not in message.caption:
+        await message.reply_text("Please include 'Episode : <number>' in the caption.")
         return
 
-    await message.reply_text("Processing your file...")
+    # Get the episode number
+    try:
+        episode = message.caption.split("Episode :")[1].split()[0].strip()
+    except IndexError:
+        await message.reply_text("Invalid episode format. Use 'Episode : <number>'.")
+        return
 
-    # Forward the file to the file store channel
-    forwarded_msg = await message.forward(FILE_STORE_CHANNEL)
-    encoded_link = encode_file_link(forwarded_msg.chat.id, forwarded_msg.id)
-    bot_username = (await client.get_me()).username
-    download_link = f"https://t.me/{bot_username}?start={encoded_link}"
+    # Forward file to the store channel
+    forwarded = await message.forward(STORE_CHANNEL)
+    file_id = forwarded.id
+    encoded_id = encode_file_id(str(file_id))
 
-    # Create or update the post in the target channel
-    post_key = (anime_name, episode_number)
-    quality_button = InlineKeyboardButton(quality, url=download_link)
+    # Generate a download link for the forwarded file
+    link = f"https://t.me/{STORE_CHANNEL}/{file_id}?id={encoded_id}"
 
-    if post_key not in posts:
-        # Create a new post
-        poster_id = posters[message.from_user.id]
-        caption = f"**{anime_name}**\nEpisode: {episode_number}\n\nSelect quality below:"
-        buttons = [[quality_button]]
+    # Add link to the episode dictionary
+    if episode not in EPISODE_LINKS:
+        EPISODE_LINKS[episode] = {}
 
-        target_message = await client.send_photo(
-            TARGET_CHANNEL,
-            photo=poster_id,
-            caption=caption,
-            reply_markup=InlineKeyboardMarkup(buttons),
-        )
-        posts[post_key] = target_message.id
+    # Detect quality and add link
+    if "480p" in message.caption:
+        EPISODE_LINKS[episode]["480p"] = link
+    elif "720p" in message.caption:
+        EPISODE_LINKS[episode]["720p"] = link
+    elif "1080p" in message.caption:
+        EPISODE_LINKS[episode]["1080p"] = link
     else:
-        # Update the existing post
-        target_message = await client.get_messages(TARGET_CHANNEL, posts[post_key])
-        existing_buttons = target_message.reply_markup.inline_keyboard
-        new_buttons = existing_buttons + [[quality_button]]
+        await message.reply_text("Please include quality (480p, 720p, 1080p) in the caption.")
+        return
 
-        await target_message.edit_reply_markup(reply_markup=InlineKeyboardMarkup(new_buttons))
+    # Create buttons
+    buttons = []
+    if "480p" in EPISODE_LINKS[episode]:
+        buttons.append(InlineKeyboardButton("480p", url=EPISODE_LINKS[episode]["480p"]))
+    if "720p" in EPISODE_LINKS[episode]:
+        buttons.append(InlineKeyboardButton("720p", url=EPISODE_LINKS[episode]["720p"]))
+    if "1080p" in EPISODE_LINKS[episode]:
+        buttons.append(InlineKeyboardButton("1080p", url=EPISODE_LINKS[episode]["1080p"]))
 
-    # Notify the user
-    if len(new_buttons) == 3:
-        await message.reply_text("All qualities uploaded successfully ✅")
-    else:
-        await message.reply_text(f"Uploaded {quality} successfully ✅")
+    # Send to the target channel
+    await client.send_photo(
+        TARGET_CHANNEL,
+        photo=POSTER,
+        caption=f"Anime: You are MS Servant\nSeason: 01\nEpisode: {episode}\nLanguage: Tamil",
+        reply_markup=InlineKeyboardMarkup([buttons]),
+    )
 
-
-@app.on_message(filters.private & filters.command("start"))
-async def start(client: Client, message: Message):
-    """Start command handler."""
-    if len(message.command) > 1:
-        # Handle the start parameter (decoded Base64)
-        encoded_data = message.command[1]
-        try:
-            channel_id, message_id = decode_file_link(encoded_data)
-
-            # Fetch the file from the file store channel
-            file_msg = await client.get_messages(channel_id, message_id)
-            await file_msg.copy(message.chat.id)  # Send the file to the user
-        except Exception as e:
-            await message.reply_text(f"Invalid link or error: {str(e)}")
-    else:
-        await message.reply_text(
-            "Hello! Send me a poster and files to create sharable posts with quality buttons."
-        )
+    await message.reply_text("Episode posted successfully ✅")
 
 
-if __name__ == "__main__":
-    print("Bot is running...")
-    app.run()
+# Start the bot
+app.run()
