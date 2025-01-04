@@ -31,7 +31,8 @@ async def handle_poster(client, message):
     await message.reply_text("Poster added successfully ✅")
 
 
-# Handle video and document upload
+EPISODE_MESSAGES = {}  # Store episode numbers and their corresponding message IDs
+
 @app.on_message((filters.video | filters.document) & ~filters.channel)
 async def handle_media(client, message):
     global POSTER
@@ -87,18 +88,22 @@ async def handle_media(client, message):
     # Send or edit the post in the target channel
     if len(buttons) > 0:
         if episode in EPISODE_MESSAGES:
-        # Edit the existing message
-            await client.edit_message_media(
-                TARGET_CHANNEL,
-                message_id=EPISODE_MESSAGES[episode],
-                media=pyrogram.types.InputMediaPhoto(
-                    POSTER,
-                    caption=f"Anime: You are MS Servant\nSeason: 01\nEpisode: {episode}\nQuality: {', '.join(EPISODE_LINKS[episode].keys())}\nLanguage: Tamil"
-                ),
-                reply_markup=InlineKeyboardMarkup([buttons]),
-            )
+            # Edit the existing message
+            try:
+                await client.edit_message_media(
+                    TARGET_CHANNEL,
+                    message_id=EPISODE_MESSAGES[episode],
+                    media=pyrogram.types.InputMediaPhoto(
+                        POSTER,
+                        caption=f"Anime: You are MS Servant\nSeason: 01\nEpisode: {episode}\nQuality: {', '.join(EPISODE_LINKS[episode].keys())}\nLanguage: Tamil"
+                    ),
+                    reply_markup=InlineKeyboardMarkup([buttons]),
+                )
+                await message.reply_text("Episode updated successfully ✅")
+            except Exception as e:
+                await message.reply_text(f"Failed to edit the message: {e}")
         else:
-        # Send a new message and store its message ID
+            # Send a new message and store its message ID
             sent_message = await client.send_photo(
                 TARGET_CHANNEL,
                 photo=POSTER,
@@ -106,10 +111,7 @@ async def handle_media(client, message):
                 reply_markup=InlineKeyboardMarkup([buttons]),
             )
             EPISODE_MESSAGES[episode] = sent_message.id
-
-    await message.reply_text("Episode posted successfully ✅")
-
-    await message.reply_text("Episode posted successfully ✅")
+            await message.reply_text("Episode posted successfully ✅")
 
 
 # Start the bot
