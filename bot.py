@@ -86,12 +86,28 @@ async def handle_media(client, message):
 
     # Send or edit the post in the target channel
     if len(buttons) > 0:
-        await client.send_photo(
-            TARGET_CHANNEL,
-            photo=POSTER,
-            caption=f"Anime: You are MS Servant\nSeason: 01\nEpisode: {episode}\nQuality: {', '.join(EPISODE_LINKS[episode].keys())}\nLanguage: Tamil",
-            reply_markup=InlineKeyboardMarkup([buttons]),
-        )
+        if episode in EPISODE_MESSAGES:
+        # Edit the existing message
+            await client.edit_message_media(
+                TARGET_CHANNEL,
+                message_id=EPISODE_MESSAGES[episode],
+                media=pyrogram.types.InputMediaPhoto(
+                    POSTER,
+                    caption=f"Anime: You are MS Servant\nSeason: 01\nEpisode: {episode}\nQuality: {', '.join(EPISODE_LINKS[episode].keys())}\nLanguage: Tamil"
+                ),
+                reply_markup=InlineKeyboardMarkup([buttons]),
+            )
+        else:
+        # Send a new message and store its message ID
+            sent_message = await client.send_photo(
+                TARGET_CHANNEL,
+                photo=POSTER,
+                caption=f"Anime: You are MS Servant\nSeason: 01\nEpisode: {episode}\nQuality: {', '.join(EPISODE_LINKS[episode].keys())}\nLanguage: Tamil",
+                reply_markup=InlineKeyboardMarkup([buttons]),
+            )
+            EPISODE_MESSAGES[episode] = sent_message.id
+
+    await message.reply_text("Episode posted successfully ✅")
 
     await message.reply_text("Episode posted successfully ✅")
 
