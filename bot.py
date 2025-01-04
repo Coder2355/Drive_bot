@@ -38,19 +38,19 @@ async def handle_media(client, message):
     global POSTER
 
     if POSTER is None:
-        await message.reply_text("Please upload a poster first by sending a photo.")
+        await message.reply_text("Please upload a poster first by sending a photo.", quote=True)
         return
 
     # Extract episode info from caption (e.g., "Episode : 10")
     if not message.caption or "Episode :" not in message.caption:
-        await message.reply_text("Please include 'Episode : <number>' in the caption.")
+        await message.reply_text("Please include 'Episode : <number>' in the caption.", quote=True)
         return
 
     # Get the episode number
     try:
         episode = message.caption.split("Episode :")[1].split()[0].strip()
     except IndexError:
-        await message.reply_text("Invalid episode format. Use 'Episode : <number>'.")
+        await message.reply_text("Invalid episode format. Use 'Episode : <number>'.", quote=True)
         return
 
     # Forward file to the store channel
@@ -71,7 +71,7 @@ async def handle_media(client, message):
         quality = "1080p"
 
     if not quality:
-        await message.reply_text("Please include quality (480p, 720p, 1080p) in the caption.")
+        await message.reply_text("Please include quality (480p, 720p, 1080p) in the caption.", quote=True)
         return
 
     # Update episode links
@@ -85,6 +85,15 @@ async def handle_media(client, message):
         if q in EPISODE_LINKS[episode]:
             buttons.append(InlineKeyboardButton(q, url=EPISODE_LINKS[episode][q]))
 
+    # Caption with quotation marks
+    caption_text = (
+        f"❝ Anime  : You are ms servant ❞\n"
+        f"❝ Season: 01\nEpisode: {episode} ❞\n"
+        f"❝ Quality: {', '.join(EPISODE_LINKS[episode].keys())} ❞\n"
+        f"❝ Language: Tamil ❞\n\n"
+        f"👉 @Anime_warrior_Tamil"
+    )
+
     # Send or edit the post in the target channel
     if len(buttons) > 0:
         if episode in EPISODE_MESSAGES:
@@ -95,24 +104,29 @@ async def handle_media(client, message):
                     message_id=EPISODE_MESSAGES[episode],
                     media=pyrogram.types.InputMediaPhoto(
                         POSTER,
-                        caption=f"Anime: You are MS Servant\nSeason: 01\nEpisode: {episode}\nQuality: {', '.join(EPISODE_LINKS[episode].keys())}\nLanguage: Tamil"
+                        caption=caption_text
                     ),
                     reply_markup=InlineKeyboardMarkup([buttons]),
                 )
-                await message.reply_text("Episode updated successfully ✅")
+                await message.reply_text(f"Episode updated successfully ✅\n\n**Caption:**\n{caption_text}", quote=True)
             except Exception as e:
-                await message.reply_text(f"Failed to edit the message: {e}")
+                await message.reply_text(f"Failed to edit the message: {e}", quote=True)
         else:
             # Send a new message and store its message ID
             sent_message = await client.send_photo(
                 TARGET_CHANNEL,
                 photo=POSTER,
-                caption=f"Anime: You are MS Servant\nSeason: 01\nEpisode: {episode}\nQuality: {', '.join(EPISODE_LINKS[episode].keys())}\nLanguage: Tamil",
+                caption=caption_text,
                 reply_markup=InlineKeyboardMarkup([buttons]),
             )
             EPISODE_MESSAGES[episode] = sent_message.id
-            await message.reply_text("Episode posted successfully ✅")
+            await message.reply_text(f"Episode posted successfully ✅\n\n**Caption:**\n{caption_text}", quote=True)
 
-
+    # Check if all qualities are uploaded
+    if len(EPISODE_LINKS[episode]) == 3:
+        # Delete episode details from both dictionaries
+        del EPISODE_LINKS[episode]
+        del EPISODE_MESSAGES[episode]
+        await message.reply_text(f"All qualities uploaded for Episode {episode}. Data cleared from memory ✅", quote=True)
 # Start the bot
 app.run()
