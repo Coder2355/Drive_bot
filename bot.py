@@ -53,17 +53,7 @@ async def compress_video(client, message):
         await msg.delete()
 
 async def encode_video(input_path, output_path, progress_msg):
-    command = [
-        "ffmpeg", "-i", input_path,
-        "-vf", "scale=-1:720",  # Rescale video to 720p
-        "-c:v", "libx264", "-preset", "slow", "-crf", "28",
-        "-c:a", "aac", "-b:a", "128k", "-movflags", "+faststart",
-        output_path
-    ]
     
-    process = await asyncio.create_subprocess_exec(
-        *command, stderr=asyncio.subprocess.PIPE
-    )
     
     total_duration = await get_video_duration(input_path)
     start_time = asyncio.get_event_loop().time()
@@ -89,6 +79,17 @@ async def encode_video(input_path, output_path, progress_msg):
                     f"**Speed:** {speed}x\n"
                 )
 
+    command = [
+        "ffmpeg", "-i", input_path,
+        "-vf", "scale=-1:720",  # Rescale video to 720p
+        "-c:v", "libx264", "-preset", "slow", "-crf", "28",
+        "-c:a", "aac", "-b:a", "128k", "-movflags", "+faststart",
+        output_path
+    ]
+    
+    process = await asyncio.create_subprocess_exec(
+        *command, stderr=asyncio.subprocess.PIPE
+    )
     await process.wait()
     if process.returncode != 0:
         raise Exception("Encoding failed")
