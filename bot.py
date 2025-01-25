@@ -1,132 +1,115 @@
-
-import base64
+import os
+import re
+import asyncio
 from pyrogram import Client, filters
-from pyrogram.types import InlineKeyboardMarkup, InlineKeyboardButton
-import pyrogram.utils
-pyrogram.utils.MIN_CHANNEL_ID = -1009999999999
-from config import API_ID, API_HASH, BOT_TOKEN, FILE_STORE_CHANNEL, TARGET_CHANNEL
-# Bot configuration
+from pyrogram.types import InlineKeyboardButton, InlineKeyboardMarkup
+from config import API_ID, API_HASH, BOT_TOKEN
 
-# Channel IDs
-STORE_CHANNEL = FILE_STORE_CHANNEL  # Replace with your store channel ID
+app = Client("video_compressor_bot", api_id=API_ID, api_hash=API_HASH, bot_token=BOT_TOKEN)
 
-# Initialize the bot
-app = Client("bot", api_id=API_ID, api_hash=API_HASH, bot_token=BOT_TOKEN)
+# Temporary download folder
+DOWNLOAD_PATH = "downloads"
 
-# Global dictionary to store episode links and poster
-POSTER = None
-EPISODE_LINKS = {}
+# Ensure the download directory exists
+os.makedirs(DOWNLOAD_PATH, exist_ok=True)
 
+# Start message
+START_MESSAGE = "Hello! I am a video compressor bot. Send me a video, and I will compress it to 720p quality."
 
-# Helper to encode file ID
-def encode_file_id(file_id):
-    return base64.urlsafe_b64encode(file_id.encode()).decode()
-
-
-# Handle poster upload
-@app.on_message(filters.photo & ~filters.channel)
-async def handle_poster(client, message):
-    global POSTER
-    POSTER = message.photo.file_id
-    await message.reply_text("Poster added successfully ✅")
-
-
-EPISODE_MESSAGES = {}  # Store episode numbers and their corresponding message IDs
-
-@app.on_message((filters.video | filters.document) & ~filters.channel)
-async def handle_media(client, message):
-    global POSTER
-
-    if POSTER is None:
-        await message.reply_text("Please upload a poster first by sending a photo.", quote=True)
-        return
-
-    # Extract episode info from caption (e.g., "Episode : 10")
-    if not message.caption or "Episode :" not in message.caption:
-        await message.reply_text("Please include 'Episode : <number>' in the caption.", quote=True)
-        return
-
-    # Get the episode number
-    try:
-        episode = message.caption.split("Episode :")[1].split()[0].strip()
-    except IndexError:
-        await message.reply_text("Invalid episode format. Use 'Episode : <number>'.", quote=True)
-        return
-
-    # Forward file to the store channel
-    forwarded = await message.forward(STORE_CHANNEL)
-    file_id = forwarded.id
-    encoded_id = encode_file_id(str(file_id))
-
-    # Generate a download link for the forwarded file
-    link = f"https://t.me/{STORE_CHANNEL}/{file_id}?id={encoded_id}"
-
-    # Detect quality from caption
-    quality = None
-    if "480p" in message.caption:
-        quality = "480p"
-    elif "720p" in message.caption:
-        quality = "720p"
-    elif "1080p" in message.caption:
-        quality = "1080p"
-
-    if not quality:
-        await message.reply_text("Please include quality (480p, 720p, 1080p) in the caption.", quote=True)
-        return
-
-    # Update episode links
-    if episode not in EPISODE_LINKS:
-        EPISODE_LINKS[episode] = {}
-    EPISODE_LINKS[episode][quality] = link
-
-    # Create buttons dynamically based on available qualities
-    buttons = []
-    for q in ["480p", "720p", "1080p"]:
-        if q in EPISODE_LINKS[episode]:
-            buttons.append(InlineKeyboardButton(q, url=EPISODE_LINKS[episode][q]))
-
-    # Caption with quotation marks
-    caption_text = (
-        f"❝ Anime  : You are ms servant ❞\n"
-        f"❝ Season: 01\nEpisode: {episode} ❞\n"
-        f"❝ Quality: {', '.join(EPISODE_LINKS[episode].keys())} ❞\n"
-        f"❝ Language: Tamil ❞\n\n"
-        f"👉 @Anime_warrior_Tamil"
+@app.on_message(filters.command("start") & filters.private)
+async def start(client, message):
+    await message.reply_text(
+        START_MESSAGE,
+        reply_markup=InlineKeyboardMarkup([
+            [InlineKeyboardButton("Source Code", url="https://github.com/your-repo")],
+        ])
     )
 
-    # Send or edit the post in the target channel
-    if len(buttons) > 0:
-        if episode in EPISODE_MESSAGES:
-            # Edit the existing message
-            try:
-                await client.edit_message_media(
-                    TARGET_CHANNEL,
-                    message_id=EPISODE_MESSAGES[episode],
-                    media=pyrogram.types.InputMediaPhoto(
-                        POSTER,
-                        caption=caption_text
-                    ),
-                    reply_markup=InlineKeyboardMarkup([buttons]),
-                )
-                await message.reply_text(f"Episode updated successfully ✅\n\n**Caption:**\n{caption_text}", quote=True)
-            except Exception as e:
-                await message.reply_text(f"Failed to edit the message: {e}", quote=True)
-        else:
-            # Send a new message and store its message ID
-            sent_message = await client.send_photo(
-                TARGET_CHANNEL,
-                photo=POSTER,
-                caption=caption_text,
-                reply_markup=InlineKeyboardMarkup([buttons]),
-            )
-            EPISODE_MESSAGES[episode] = sent_message.id
-            await message.reply_text(f"Episode posted successfully ✅\n\n**Caption:**\n{caption_text}", quote=True)
+@app.on_message(filters.video & filters.private)
+async def compress_video(client, message):
+    msg = await message.reply_text("Downloading your video...")
+    video_path = await message.download(DOWNLOAD_PATH)
+    compressed_video_path = os.path.join(DOWNLOAD_PATH, f"compressed_{message.video.file_name}")
 
-    # Check if all qualities are uploaded
-    if len(EPISODE_LINKS[episode]) == 3:
-        # Delete episode details from both dictionaries
-        del EPISODE_LINKS[episode]
-        del EPISODE_MESSAGES[episode]
-        await message.reply_text(f"All qualities uploaded for Episode {episode}. Data cleared from memory ✅", quote=True)
-# Start the bot
-app.run()
+    try:
+        # Start compression and track progress
+        await msg.edit_text("Compressing your video to 720p...")
+        await encode_video(video_path, compressed_video_path, msg)
+
+        # Upload the compressed video
+        compressed_size = os.path.getsize(compressed_video_path) / (1024 * 1024)  # In MB
+        await msg.edit_text(f"Uploading the compressed video... (Size: {compressed_size:.2f} MB)")
+        await message.reply_video(
+            compressed_video_path,
+            caption=f"Here is your compressed video in 720p quality.\n\n**Compressed Size:** {compressed_size:.2f} MB"
+        )
+    except Exception as e:
+        await message.reply_text(f"An error occurred: {e}")
+    finally:
+        # Clean up downloaded and processed files
+        os.remove(video_path)
+        if os.path.exists(compressed_video_path):
+            os.remove(compressed_video_path)
+        await msg.delete()
+
+async def encode_video(input_path, output_path, progress_msg):
+    command = [
+        "ffmpeg", "-i", input_path,
+        "-vf", "scale=-1:720",  # Rescale video to 720p
+        "-c:v", "libx264", "-preset", "slow", "-crf", "28",
+        "-c:a", "aac", "-b:a", "128k", "-movflags", "+faststart",
+        output_path
+    ]
+    
+    process = await asyncio.create_subprocess_exec(
+        *command, stderr=asyncio.subprocess.PIPE
+    )
+    
+    total_duration = await get_video_duration(input_path)
+    start_time = asyncio.get_event_loop().time()
+    
+    async for line in process.stderr:
+        line = line.decode()
+        if "time=" in line:
+            # Parse encoding progress
+            time_match = re.search(r"time=(\d+:\d+:\d+\.\d+)", line)
+            speed_match = re.search(r"speed=([\d.]+)x", line)
+            
+            if time_match:
+                elapsed_time = time_match.group(1)
+                progress = await calculate_progress(elapsed_time, total_duration)
+                current_size = os.path.getsize(output_path) / (1024 * 1024) if os.path.exists(output_path) else 0
+                speed = speed_match.group(1) if speed_match else "N/A"
+                elapsed = asyncio.get_event_loop().time() - start_time
+
+                await progress_msg.edit_text(
+                    f"**Encoding Progress:** {progress:.2f}%\n"
+                    f"**Output Size:** {current_size:.2f} MB\n"
+                    f"**Elapsed Time:** {elapsed:.2f} seconds\n"
+                    f"**Speed:** {speed}x\n"
+                )
+
+    await process.wait()
+    if process.returncode != 0:
+        raise Exception("Encoding failed")
+
+async def get_video_duration(video_path):
+    """Get video duration in seconds."""
+    command = [
+        "ffprobe", "-i", video_path, "-show_entries", "format=duration",
+        "-v", "quiet", "-of", "csv=p=0"
+    ]
+    process = await asyncio.create_subprocess_exec(
+        *command, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE
+    )
+    stdout, _ = await process.communicate()
+    return float(stdout.decode().strip())
+
+async def calculate_progress(elapsed_time, total_duration):
+    """Calculate encoding progress percentage."""
+    h, m, s = map(float, elapsed_time.split(":"))
+    elapsed_seconds = h * 3600 + m * 60 + s
+    return (elapsed_seconds / total_duration) * 100
+
+if __name__ == "__main__":
+    app.run()
