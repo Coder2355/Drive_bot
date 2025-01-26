@@ -40,12 +40,21 @@ async def handle_video(client, message):
 async def compress_video(client, callback_query):
     message = callback_query.message
     await callback_query.answer()
+
+    # Ensure the callback is replying to a valid message
+    if not message.reply_to_message:
+        await message.edit_text("Please reply to a valid video or document message to compress.")
+        return
+
+    video = message.reply_to_message.video or message.reply_to_message.document
+    if not video:
+        await message.edit_text("The replied message doesn't contain a valid video.")
+        return
+
     await message.edit_text("Downloading video...")
 
     # Download video
-    video = message.reply_to_message.video or message.reply_to_message.document
     file_path = await client.download_media(video, file_name=f"{DOWNLOAD_DIR}/{video.file_name}")
-
     compressed_path = f"{DOWNLOAD_DIR}/compressed_{video.file_name}"
     start_time = time()
 
