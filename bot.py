@@ -13,18 +13,18 @@ app = Client("compress_bot", api_id=API_ID, api_hash=API_HASH, bot_token=BOT_TOK
 # Function to extract FFmpeg progress and report encoding status
 async def compress_video(input_file, output_file, duration, original_size, progress_callback):
     start_time = time()
-    last_update_time = 0
+    last_update_time = 0  # To throttle updates
     process = await asyncio.create_subprocess_exec(
         "ffmpeg",
         "-i", input_file,
-        "-vf", "scale=-1:240",
-        "-c:v", "libx264",
-        "-preset", "fast",
-        "-crf", "28",
-        "-c:a", "aac",
-        "-b:a", "64k",
-        "-progress", "pipe:1",
-        "-y",
+        "-vf", "scale=-1:240",  # Scale to 240p
+        "-c:v", "libx264",  # Use H.264 codec
+        "-preset", "fast",  # Set compression speed
+        "-crf", "28",  # Quality factor
+        "-c:a", "aac",  # Audio codec
+        "-b:a", "64k",  # Audio bitrate
+        "-progress", "pipe:1",  # Output progress to pipe
+        "-y",  # Overwrite output
         output_file,
         stdout=asyncio.subprocess.PIPE,
         stderr=asyncio.subprocess.PIPE,
@@ -39,7 +39,7 @@ async def compress_video(input_file, output_file, duration, original_size, progr
         if "=" in line:
             key, value = line.split("=", 1)
             if key == "out_time_us":
-                current_time = int(value) / 1_000_000
+                current_time = int(value) / 1_000_000  # Convert microseconds to seconds
                 percentage = (current_time / duration) * 100 if duration else 0
 
                 # Read the actual current file size
@@ -48,12 +48,13 @@ async def compress_video(input_file, output_file, duration, original_size, progr
                 # Estimate final size based on progress
                 estimated_size = current_file_size / (percentage / 100) if percentage > 0 else original_size
 
-                # Throttle progress updates
+                # Throttle progress updates to every 5 seconds
                 if time() - last_update_time > 5:
                     await progress_callback(percentage, current_file_size, estimated_size, start_time)
                     last_update_time = time()
 
     await process.wait()
+
 # Function to update progress
 async def progress_handler(message, percentage, current_size, estimated_size, start_time):
     elapsed_time = time() - start_time
