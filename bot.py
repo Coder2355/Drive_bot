@@ -42,11 +42,9 @@ async def compress_video(client, callback_query):
     await callback_query.answer()
 
     # Ensure the callback is replying to a valid message
-    if not message.reply_to_message:
-        await message.edit_text("Please reply to a valid video or document message to compress.")
-        return
+    
 
-    video = message.reply_to_message.video or message.reply_to_message.document
+    video = message.video or message.document
     if not video:
         await message.edit_text("The replied message doesn't contain a valid video.")
         return
