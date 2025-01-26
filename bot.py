@@ -3,25 +3,30 @@ import asyncio
 from pyrogram import Client, filters
 from pyrogram.types import Message
 from time import time
+from math import floor
 
 from config import API_ID, API_HASH, BOT_TOKEN
-
 
 # Create Pyrogram Client
 app = Client("compress_bot", api_id=API_ID, api_hash=API_HASH, bot_token=BOT_TOKEN)
 
+# Function to calculate estimated output file size
+def calculate_estimated_size(percentage, duration, bitrate):
+    estimated_size_mb = (bitrate / 8) * duration * (percentage / 100) / (1024 * 1024)
+    return estimated_size_mb
+
 # Function to extract FFmpeg progress and report encoding status
-async def compress_video(input_file, output_file, duration, progress_callback):
+async def compress_video(input_file, output_file, duration, bitrate, progress_callback):
     start_time = time()
     process = await asyncio.create_subprocess_exec(
         "ffmpeg",
         "-i", input_file,
-        "-vf", "scale=-1:480",  # Scale to 480p
+        "-vf", "scale=-1:240",  # Scale to 240p
         "-c:v", "libx264",  # Use H.264 codec
         "-preset", "fast",  # Set compression speed
         "-crf", "28",  # Quality factor (lower is better, 23-28 recommended)
         "-c:a", "aac",  # Use AAC audio codec
-        "-b:a", "128k",  # Audio bitrate
+        "-b:a", "64k",  # Audio bitrate
         "-progress", "pipe:1",  # Output progress to pipe
         "-y",  # Overwrite output
         output_file,
@@ -40,17 +45,22 @@ async def compress_video(input_file, output_file, duration, progress_callback):
             if key == "out_time_us":
                 current_time = int(value) / 1_000_000  # Convert microseconds to seconds
                 percentage = (current_time / duration) * 100
-                await progress_callback(percentage, start_time)
+                file_size = os.path.getsize(output_file) / (1024 * 1024) if os.path.exists(output_file) else 0
+                estimated_size = calculate_estimated_size(percentage, duration, bitrate)
+                await progress_callback(percentage, file_size, estimated_size, start_time)
     
     await process.wait()
 
-# Function to update progress
-async def progress_handler(message, percentage, start_time):
+# Function to update progress with progress bar and file sizes
+async def progress_handler(message, percentage, file_size, estimated_size, start_time):
     elapsed_time = time() - start_time
+    progress_bar = "▓" * floor(percentage / 10) + "░" * (10 - floor(percentage / 10))
     progress_message = (
         f"🎥 **Encoding Progress**:\n"
-        f"**Percentage**: {percentage:.2f}%\n"
+        f"**[{progress_bar}]** {percentage:.2f}%\n"
         f"**Elapsed Time**: {elapsed_time:.2f} seconds\n"
+        f"**Current File Size**: {file_size:.2f} MB\n"
+        f"**Estimated Final Size**: {estimated_size:.2f} MB\n"
         f"**Status**: Encoding..."
     )
     try:
@@ -59,13 +69,14 @@ async def progress_handler(message, percentage, start_time):
         pass  # Prevent errors if the message is edited/deleted simultaneously
 
 # Handler for video messages
-@app.on_message(filters.video)  # Removed ~filters.edited
+@app.on_message(filters.video)
 async def handle_video(client, message: Message):
     video = message.video
     input_file = await message.download()
     output_file = f"compressed_{video.file_name}"
 
     duration = video.duration  # Video duration in seconds
+    bitrate = 500_000  # Approximate bitrate for 240p video in bits per second
     progress_message = await message.reply_text("📥 Downloaded video. Starting compression...")
 
     try:
@@ -73,10 +84,11 @@ async def handle_video(client, message: Message):
             input_file,
             output_file,
             duration,
-            lambda percentage, start_time: progress_handler(progress_message, percentage, start_time)
+            bitrate,
+            lambda percentage, file_size, estimated_size, start_time: progress_handler(progress_message, percentage, file_size, estimated_size, start_time)
         )
-        file_size = os.path.getsize(output_file) / (1024 * 1024)  # File size in MB
-        await progress_message.edit(f"✅ Compression complete! Compressed size: {file_size:.2f} MB. Uploading...")
+        final_file_size = os.path.getsize(output_file) / (1024 * 1024)  # Final file size in MB
+        await progress_message.edit(f"✅ Compression complete! Final size: {final_file_size:.2f} MB. Uploading...")
         await message.reply_video(output_file, caption="Here is your compressed video 🎥")
     except Exception as e:
         await progress_message.edit(f"❌ Compression failed: {str(e)}")
