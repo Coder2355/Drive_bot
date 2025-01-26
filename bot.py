@@ -33,9 +33,9 @@ async def compress_video(client, message):
 
     try:
         # Notify user about compression start
-        await msg.edit_text("Starting compression...")
-        
-        # Start compression with progress tracking
+        await msg.edit_text("Compressing your video to 720p...")
+
+        # Start compression with real-time progress tracking
         await encode_video(video_path, compressed_video_path, msg)
 
         # Notify user of upload progress
@@ -57,9 +57,9 @@ async def compress_video(client, message):
 async def encode_video(input_path, output_path, progress_msg):
     command = [
         "ffmpeg", "-i", input_path,
-        "-vf", "scale=-1:720",  # Rescale video to 720p
+        "-vf", "scale=-1:240",  # Rescale video to 720p
         "-c:v", "libx264", "-preset", "slow", "-crf", "28",
-        "-c:a", "aac", "-b:a", "128k", "-movflags", "+faststart",
+        "-c:a", "aac", "-b:a", "38k", "-movflags", "+faststart",
         output_path
     ]
     
@@ -69,7 +69,7 @@ async def encode_video(input_path, output_path, progress_msg):
     
     total_duration = await get_video_duration(input_path)
     start_time = asyncio.get_event_loop().time()
-    
+
     while True:
         line = await process.stderr.readline()
         if not line:
@@ -88,6 +88,7 @@ async def encode_video(input_path, output_path, progress_msg):
                 speed = speed_match.group(1) if speed_match else "N/A"
                 elapsed = asyncio.get_event_loop().time() - start_time
 
+                # Update progress bar
                 await progress_msg.edit_text(
                     f"**Encoding Progress:** {progress:.2f}%\n"
                     f"**Output Size:** {current_size:.2f} MB\n"
