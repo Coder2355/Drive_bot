@@ -7,19 +7,12 @@ from math import floor
 
 from config import API_ID, API_HASH, BOT_TOKEN
 
+
 # Create Pyrogram Client
 app = Client("compress_bot", api_id=API_ID, api_hash=API_HASH, bot_token=BOT_TOKEN)
 
-# Function to calculate estimated output file size
-def calculate_estimated_size(current_time, duration, bitrate):
-    """Estimate the output file size dynamically during encoding."""
-    if duration == 0 or current_time == 0:
-        return 0
-    return (bitrate / 8) * current_time / (1024 * 1024)
-
-# Function to extract FFmpeg progress and report encoding status
-async def compress_video(input_file, output_file, duration, bitrate, progress_callback):
-    """Compress the video using FFmpeg and update progress dynamically."""
+# Function to extract FFmpeg progress and dynamically calculate estimated size
+async def compress_video(input_file, output_file, duration, original_size, progress_callback):
     start_time = time()
     process = await asyncio.create_subprocess_exec(
         "ffmpeg",
@@ -48,15 +41,18 @@ async def compress_video(input_file, output_file, duration, bitrate, progress_ca
             if key == "out_time_us":
                 current_time = int(value) / 1_000_000  # Convert microseconds to seconds
                 percentage = (current_time / duration) * 100 if duration else 0
+
+                # Estimate remaining size: decrease from the original size
+                estimated_size = original_size * (1 - (percentage / 100))
+
+                # Get current file size
                 current_file_size = os.path.getsize(output_file) / (1024 * 1024) if os.path.exists(output_file) else 0
-                estimated_size = calculate_estimated_size(current_time, duration, bitrate)
                 await progress_callback(percentage, current_file_size, estimated_size, start_time)
 
     await process.wait()
 
 # Function to update progress with progress bar and file sizes
 async def progress_handler(message, percentage, current_size, estimated_size, start_time):
-    """Display the progress bar and dynamically update encoding status."""
     elapsed_time = time() - start_time
     progress_bar = "▓" * floor(percentage / 10) + "░" * (10 - floor(percentage / 10))
     progress_message = (
@@ -70,18 +66,17 @@ async def progress_handler(message, percentage, current_size, estimated_size, st
     try:
         await message.edit(progress_message)
     except:
-        pass  # Handle cases where the message is edited/deleted simultaneously
+        pass  # Prevent errors if the message is edited/deleted simultaneously
 
 # Handler for video messages
 @app.on_message(filters.video)
 async def handle_video(client, message: Message):
-    """Handle incoming video messages and start compression."""
     video = message.video
     input_file = await message.download()
     output_file = f"compressed_{video.file_name}"
 
     duration = video.duration  # Video duration in seconds
-    bitrate = 500_000  # Approximate bitrate for 240p video in bits per second
+    original_size = os.path.getsize(input_file) / (1024 * 1024)  # Original file size in MB
     progress_message = await message.reply_text("📥 Downloaded video. Starting compression...")
 
     try:
@@ -89,7 +84,7 @@ async def handle_video(client, message: Message):
             input_file,
             output_file,
             duration,
-            bitrate,
+            original_size,
             lambda percentage, current_size, estimated_size, start_time: progress_handler(
                 progress_message, percentage, current_size, estimated_size, start_time
             ),
