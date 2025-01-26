@@ -32,11 +32,13 @@ async def compress_video(client, message):
     compressed_video_path = os.path.join(DOWNLOAD_PATH, f"compressed_{message.video.file_name}")
 
     try:
-        # Start compression and track progress
-        await msg.edit_text("Compressing your video to 720p...")
+        # Notify user about compression start
+        await msg.edit_text("Starting compression...")
+        
+        # Start compression with progress tracking
         await encode_video(video_path, compressed_video_path, msg)
 
-        # Upload the compressed video
+        # Notify user of upload progress
         compressed_size = os.path.getsize(compressed_video_path) / (1024 * 1024)  # In MB
         await msg.edit_text(f"Uploading the compressed video... (Size: {compressed_size:.2f} MB)")
         await message.reply_video(
@@ -53,12 +55,26 @@ async def compress_video(client, message):
         await msg.delete()
 
 async def encode_video(input_path, output_path, progress_msg):
+    command = [
+        "ffmpeg", "-i", input_path,
+        "-vf", "scale=-1:720",  # Rescale video to 720p
+        "-c:v", "libx264", "-preset", "slow", "-crf", "28",
+        "-c:a", "aac", "-b:a", "128k", "-movflags", "+faststart",
+        output_path
+    ]
     
+    process = await asyncio.create_subprocess_exec(
+        *command, stderr=asyncio.subprocess.PIPE
+    )
     
     total_duration = await get_video_duration(input_path)
     start_time = asyncio.get_event_loop().time()
     
-    async for line in process.stderr:
+    while True:
+        line = await process.stderr.readline()
+        if not line:
+            break
+        
         line = line.decode()
         if "time=" in line:
             # Parse encoding progress
@@ -79,17 +95,6 @@ async def encode_video(input_path, output_path, progress_msg):
                     f"**Speed:** {speed}x\n"
                 )
 
-    command = [
-        "ffmpeg", "-i", input_path,
-        "-vf", "scale=-1:240",  # Rescale video to 720p
-        "-c:v", "libx264", "-preset", "veryfast", "-crf", "30",
-        "-c:a", "aac", "-b:a", "32k", "-movflags", "+faststart",
-        output_path
-    ]
-    
-    process = await asyncio.create_subprocess_exec(
-        *command, stderr=asyncio.subprocess.PIPE
-    )
     await process.wait()
     if process.returncode != 0:
         raise Exception("Encoding failed")
