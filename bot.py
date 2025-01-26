@@ -3,6 +3,7 @@ import asyncio
 from pyrogram import Client, filters
 from pyrogram.types import Message
 from time import time
+
 from config import API_ID, API_HASH, BOT_TOKEN
 
 
@@ -58,7 +59,7 @@ async def progress_handler(message, percentage, start_time):
         pass  # Prevent errors if the message is edited/deleted simultaneously
 
 # Handler for video messages
-@app.on_message(filters.video & ~filters.edited)
+@app.on_message(filters.video)  # Removed ~filters.edited
 async def handle_video(client, message: Message):
     video = message.video
     input_file = await message.download()
