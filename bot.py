@@ -57,7 +57,7 @@ async def compress_video(client, message):
 async def encode_video(input_path, output_path, progress_msg):
     command = [
         "ffmpeg", "-i", input_path,
-        "-vf", "scale=-1:240",  # Rescale video to 720p
+        "-vf", "scale=-1:720",  # Rescale video to 720p
         "-c:v", "libx264", "-preset", "slow", "-crf", "28",
         "-c:a", "aac", "-b:a", "38k", "-movflags", "+faststart",
         output_path
